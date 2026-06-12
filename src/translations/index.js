@@ -44,6 +44,13 @@ export const translations = {
       recommendations: "Mes recommandations",
       noRecommendations: "Aucune recommandation pour l'instant",
       startChat: "Commencer une conversation",
+      completeProfile: "Compléter mon profil santé",
+      completeProfileSub: "Renseignez votre profil pour obtenir des recommandations personnalisées",
+      seeAll: "Voir tout",
+      nearbyPoints: "Points de vente proches",
+      noNearbyPoints: "Aucun point de vente à proximité",
+      lastRecommendation: "Dernière recommandation",
+      quickActions: "Actions rapides",
     },
 
     // Farmer
@@ -128,6 +135,14 @@ export const translations = {
       recommendations: "My recommendations",
       noRecommendations: "No recommendations yet",
       startChat: "Start a conversation",
+      completeProfile: "Complete my health profile",
+      completeProfileSub: "Fill in your profile to get personalized recommendations",
+      seeAll: "See all",
+      nearbyPoints: "Nearby selling points",
+      noNearbyPoints: "No nearby selling points",
+      lastRecommendation: "Last recommendation",
+      quickActions: "Quick actions",
+      
     },
 
     // Farmer
