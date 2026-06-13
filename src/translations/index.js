@@ -88,6 +88,24 @@ export const translations = {
       skip: "Passer",
       confirm: "Confirmer",
     },
+    chat: {
+    title: "Assistant GreenSense",
+    subtitle: "Posez vos questions nutritionnelles",
+    placeholder: "Posez votre question...",
+    send: "Envoyer",
+    thinking: "En train de réfléchir...",
+    errorMessage: "Désolé, une erreur est survenue. Réessayez.",
+    welcomeMessage: "Bonjour ! Je suis votre assistant nutritionnel GreenSense. Je connais votre profil de santé et je suis là pour vous aider à mieux manger. Comment puis-je vous aider aujourd'hui ?",
+    suggestions: {
+      title: "Suggestions",
+      items: [
+        "Que devrais-je manger aujourd'hui ?",
+        "Quels aliments sont bons pour mon diabète ?",
+        "Proposez-moi un menu pour la semaine",
+        "Quels produits locaux sont disponibles près de moi ?",
+      ],
+    },
+  },
   },
 
   en: {
@@ -180,5 +198,23 @@ export const translations = {
       skip: "Skip",
       confirm: "Confirm",
     },
+    chat: {
+    title: "GreenSense Assistant",
+    subtitle: "Ask your nutritional questions",
+    placeholder: "Ask your question...",
+    send: "Send",
+    thinking: "Thinking...",
+    errorMessage: "Sorry, an error occurred. Please try again.",
+    welcomeMessage: "Hello! I am your GreenSense nutritional assistant. I know your health profile and I am here to help you eat better. How can I help you today?",
+    suggestions: {
+      title: "Suggestions",
+      items: [
+        "What should I eat today?",
+        "What foods are good for my diabetes?",
+        "Suggest a menu for the week",
+        "What local products are available near me?",
+      ],
+    },
+  },
   },
 };
