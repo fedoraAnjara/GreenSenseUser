@@ -11,9 +11,20 @@ import {
   Platform,
   SafeAreaView,
 } from "react-native";
-import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  serverTimestamp,
+  doc,
+  getDoc,
+  query,
+  orderBy,
+  limit,
+} from "firebase/firestore";
 import { db } from "../../src/lib/firebase";
-import { sendMessageToGemini } from "../../src/lib/gemini";import { useAuth } from "../../src/context/AuthContext";
+import { sendMessageToGemini } from "../../src/lib/gemini";
+import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
 import { useRouter } from "expo-router";
 
@@ -32,20 +43,50 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [healthProfile, setHealthProfile] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
   useEffect(() => {
-    const fetchHealthProfile = async () => {
+    const fetchInitialData = async () => {
       if (!user) return;
       try {
-        const snap = await getDoc(
+        // Récupérer profil santé
+        const healthSnap = await getDoc(
           doc(db, "users", user.uid, "profilSante", "data")
         );
-        if (snap.exists()) setHealthProfile(snap.data());
+        if (healthSnap.exists()) setHealthProfile(healthSnap.data());
+
+        // Récupérer historique des 20 derniers échanges
+        const historySnap = await getDocs(
+          query(
+            collection(db, "users", user.uid, "conversations"),
+            orderBy("sentAt", "desc"),
+            limit(20)
+          )
+        );
+
+        if (!historySnap.empty) {
+          const history = historySnap.docs
+            .reverse()
+            .flatMap((doc) => {
+              const data = doc.data();
+              return [
+                { role: "user", content: data.userMessage },
+                { role: "assistant", content: data.assistantMessage },
+              ];
+            });
+
+          setMessages([
+            { role: "assistant", content: t.chat.welcomeMessage },
+            ...history,
+          ]);
+        }
       } catch (e) {
         console.error(e);
+      } finally {
+        setLoadingHistory(false);
       }
     };
-    fetchHealthProfile();
+    fetchInitialData();
   }, [user]);
 
   // Scroll automatique vers le bas
@@ -56,15 +97,16 @@ export default function ChatScreen() {
   }, [messages]);
 
   const buildSystemPrompt = () => {
-    let prompt = `Tu es un assistant nutritionnel intelligent intégré à l'application GreenSense, une plateforme de recommandations nutritionnelles personnalisées basée à Madagascar. 
-    
+    let prompt = `Tu es un assistant nutritionnel intelligent intégré à l'application GreenSense, une plateforme de recommandations nutritionnelles personnalisées basée à Madagascar.
+
 Tu dois :
 - Donner des conseils nutritionnels personnalisés et pratiques
 - Suggérer des aliments et menus adaptés au profil de santé de l'utilisateur
 - Valoriser les produits agricoles locaux malgaches quand c'est pertinent
 - Répondre en français de façon claire, bienveillante et professionnelle
 - Ne jamais remplacer un avis médical professionnel
-- Toujours préciser que tes recommandations sont éducatives et non médicales`;
+- Toujours préciser que tes recommandations sont éducatives et non médicales
+- Te souvenir des échanges précédents pour affiner tes recommandations`;
 
     if (healthProfile) {
       prompt += `\n\nProfil de santé de l'utilisateur :
@@ -84,58 +126,50 @@ Tiens compte de ces informations dans toutes tes réponses.`;
   };
 
   const handleSend = async (messageText = null) => {
-  const textToSend = messageText || input.trim();
+    const textToSend = messageText || input.trim();
+    if (!textToSend || loading) return;
 
-  if (!textToSend || loading) return;
+    const userMessage = { role: "user", content: textToSend };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
 
-  const userMessage = {
-    role: "user",
-    content: textToSend,
-  };
+    try {
+      const responseText = await sendMessageToGemini(
+        newMessages,
+        buildSystemPrompt()
+      );
 
-  const newMessages = [...messages, userMessage];
+      const assistantMessage = { role: "assistant", content: responseText };
+      setMessages((prev) => [...prev, assistantMessage]);
 
-  setMessages(newMessages);
-  setInput("");
-  setLoading(true);
-
-  try {
-    // Envoi à Gemini
-    const responseText = await sendMessageToGemini(
-      newMessages,
-      buildSystemPrompt()
-    );
-
-    const assistantMessage = {
-      role: "assistant",
-      content: responseText,
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    // Sauvegarde Firestore
-    if (user) {
-      await addDoc(collection(db, "conversations"), {
-        userId: user.uid,
+      // Sauvegarder sous l'utilisateur dans Firestore
+      await addDoc(collection(db, "users", user.uid, "conversations"), {
         userMessage: textToSend,
         assistantMessage: responseText,
         sentAt: serverTimestamp(),
       });
-    }
-  } catch (error) {
-    console.error("Gemini Error:", error);
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: t.chat.errorMessage,
-      },
-    ]);
-  } finally {
-    setLoading(false);
+    } catch (error) {
+      console.error("Gemini Error:", error);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: t.chat.errorMessage },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loadingHistory) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#16a34a" />
+        <Text style={styles.loadingText}>Chargement de l'historique...</Text>
+      </View>
+    );
   }
-};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -169,10 +203,12 @@ Tiens compte de ces informations dans toutes tes réponses.`;
           contentContainerStyle={styles.messagesContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Suggestions */}
+          {/* Suggestions — seulement si pas d'historique */}
           {messages.length === 1 && (
             <View style={styles.suggestions}>
-              <Text style={styles.suggestionsTitle}>{t.chat.suggestions.title}</Text>
+              <Text style={styles.suggestionsTitle}>
+                {t.chat.suggestions.title}
+              </Text>
               <View style={styles.suggestionsGrid}>
                 {t.chat.suggestions.items.map((suggestion, index) => (
                   <TouchableOpacity
@@ -193,7 +229,9 @@ Tiens compte de ces informations dans toutes tes réponses.`;
               key={index}
               style={[
                 styles.messageRow,
-                msg.role === "user" ? styles.messageRowUser : styles.messageRowAssistant,
+                msg.role === "user"
+                  ? styles.messageRowUser
+                  : styles.messageRowAssistant,
               ]}
             >
               {msg.role === "assistant" && (
@@ -204,13 +242,17 @@ Tiens compte de ces informations dans toutes tes réponses.`;
               <View
                 style={[
                   styles.bubble,
-                  msg.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
+                  msg.role === "user"
+                    ? styles.bubbleUser
+                    : styles.bubbleAssistant,
                 ]}
               >
                 <Text
                   style={[
                     styles.bubbleText,
-                    msg.role === "user" ? styles.bubbleTextUser : styles.bubbleTextAssistant,
+                    msg.role === "user"
+                      ? styles.bubbleTextUser
+                      : styles.bubbleTextAssistant,
                   ]}
                 >
                   {msg.content}
@@ -227,7 +269,13 @@ Tiens compte de ces informations dans toutes tes réponses.`;
               </View>
               <View style={[styles.bubble, styles.bubbleAssistant]}>
                 <ActivityIndicator size="small" color="#16a34a" />
-                <Text style={[styles.bubbleText, styles.bubbleTextAssistant, { marginTop: 4 }]}>
+                <Text
+                  style={[
+                    styles.bubbleText,
+                    styles.bubbleTextAssistant,
+                    { marginTop: 4 },
+                  ]}
+                >
                   {t.chat.thinking}
                 </Text>
               </View>
@@ -248,14 +296,16 @@ Tiens compte de ces informations dans toutes tes réponses.`;
             onSubmitEditing={() => handleSend()}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              (!input.trim() || loading) && styles.sendBtnDisabled,
+            ]}
             onPress={() => handleSend()}
             disabled={!input.trim() || loading}
           >
             <Text style={styles.sendBtnText}>›</Text>
           </TouchableOpacity>
         </View>
-
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -268,6 +318,17 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "#6b7280",
   },
   header: {
     flexDirection: "row",
