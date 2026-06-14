@@ -97,7 +97,13 @@ export default function ChatScreen() {
   }, [messages]);
 
   const buildSystemPrompt = () => {
-    let prompt = `Tu es un assistant nutritionnel intelligent intégré à l'application GreenSense, une plateforme de recommandations nutritionnelles personnalisées basée à Madagascar.
+  let prompt = `Tu es un assistant nutritionnel intelligent intégré à l'application GreenSense, une plateforme de recommandations nutritionnelles personnalisées basée à Madagascar.
+
+RÈGLES ABSOLUES :
+- Tu dois TOUJOURS terminer tes réponses complètement, ne jamais t'arrêter au milieu
+- Si on te demande un menu pour une semaine, tu génères les 7 jours complets avec petit-déjeuner, déjeuner et dîner
+- Tu ne dis JAMAIS "voici le menu" sans le donner réellement
+- Tes réponses doivent être concrètes, détaillées et directement utilisables
 
 Tu dois :
 - Donner des conseils nutritionnels personnalisés et pratiques
@@ -108,8 +114,8 @@ Tu dois :
 - Toujours préciser que tes recommandations sont éducatives et non médicales
 - Te souvenir des échanges précédents pour affiner tes recommandations`;
 
-    if (healthProfile) {
-      prompt += `\n\nProfil de santé de l'utilisateur :
+  if (healthProfile) {
+    prompt += `\n\nProfil de santé de l'utilisateur :
 - Poids : ${healthProfile.poids} kg
 - Taille : ${healthProfile.taille} cm
 - IMC : ${healthProfile.imc}
@@ -117,13 +123,13 @@ Tu dois :
 - Objectifs nutritionnels : ${healthProfile.objectifs?.join(", ") || "aucun"}
 - Allergies : ${healthProfile.allergies?.join(", ") || "aucune"}
 
-Tiens compte de ces informations dans toutes tes réponses.`;
-    } else {
-      prompt += `\n\nL'utilisateur n'a pas encore renseigné son profil de santé. Encourage-le à le compléter pour des recommandations plus personnalisées.`;
-    }
+Tiens ABSOLUMENT compte de ces informations dans toutes tes réponses. Adapte chaque suggestion à ce profil.`;
+  } else {
+    prompt += `\n\nL'utilisateur n'a pas encore renseigné son profil de santé. Encourage-le à le compléter pour des recommandations plus personnalisées.`;
+  }
 
-    return prompt;
-  };
+  return prompt;
+};
 
   const handleSend = async (messageText = null) => {
     const textToSend = messageText || input.trim();
