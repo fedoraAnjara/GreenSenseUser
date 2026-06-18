@@ -113,6 +113,29 @@ export const translations = {
       skip: "Passer",
       confirm: "Confirmer",
     },
+
+    map: {
+  title: "Carte",
+  subtitle: "Points de vente près de vous",
+  loading: "Localisation en cours...",
+  locating: "Recherche des points proches...",
+  noPoints: "Aucun point de vente à proximité",
+  permissionDenied: "Permission de localisation refusée. Activez-la dans les paramètres.",
+  distance: "km",
+  types: {
+    vente: "Point de vente",
+    cultivation: "Cultivation",
+    elevage: "Élevage",
+  },
+  detail: {
+    farmer: "Agriculteur",
+    address: "Adresse",
+    type: "Type",
+    noFarmer: "Non renseigné",
+    directions: "Itinéraire",
+  },
+},
+
     chat: {
     title: "Assistant GreenSense",
     subtitle: "Posez vos questions nutritionnelles",
@@ -249,6 +272,29 @@ export const translations = {
       skip: "Skip",
       confirm: "Confirm",
     },
+
+    map: {
+      title: "Map",
+      subtitle: "Selling points near you",
+      loading: "Locating...",
+      locating: "Searching nearby points...",
+      noPoints: "No selling points nearby",
+      permissionDenied: "Location permission denied. Enable it in settings.",
+      distance: "km",
+      types: {
+        vente: "Selling point",
+        cultivation: "Cultivation",
+        elevage: "Livestock",
+      },
+      detail: {
+        farmer: "Farmer",
+        address: "Address",
+        type: "Type",
+        noFarmer: "Not provided",
+        directions: "Directions",
+      },
+    },
+
     chat: {
     title: "GreenSense Assistant",
     subtitle: "Ask your nutritional questions",
