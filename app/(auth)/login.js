@@ -13,29 +13,20 @@ import {
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../../src/lib/firebase";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
+import Logo from "../../components/Logo";
+import Entypo from '@expo/vector-icons/Entypo';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const router = useRouter();
-  const { user, userData, loading: authLoading } = useAuth();
-  const { t, language, toggleLanguage } = useLanguage();
+  const { t } = useLanguage();
 
-  // Rediriger si déjà connecté
-  useEffect(() => {
-    if (!authLoading && user) {
-      if (userData?.role === "agriculteur") {
-        router.replace("/(farmer)");
-      } else {
-        router.replace("/(consumer)");
-      }
-    }
-  }, [user, userData, authLoading]);
 
   const getErrorMessage = (code) => {
     switch (code) {
@@ -56,6 +47,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      router.replace("/(consumer)");
     } catch (e) {
       setError(getErrorMessage(e.code));
     } finally {
@@ -64,229 +56,244 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      {/* En-tête dégradé organique */}
+      <View style={styles.headerBg}>
+        <View style={styles.blob1} />
+        <View style={styles.blob2} />
+      </View>
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Bouton langue */}
-        <TouchableOpacity
-          style={styles.langBtn}
-          onPress={toggleLanguage}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.langText}>
-            {language === "fr" ? "🇬🇧 EN" : "🇫🇷 FR"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Logo */}
-        <View style={styles.logoArea}>
-          <View style={styles.logoIcon}>
-            <Text style={styles.logoEmoji}>🌿</Text>
+          {/* Carte logo flottante */}
+          <View style={styles.logoCard}>
+            <Logo size={48} />
           </View>
-          <Text style={styles.logoText}>GreenSense</Text>
-          <Text style={styles.logoSub}>{t.auth.welcomeSub}</Text>
-        </View>
 
-        {/* Formulaire */}
-        <View style={styles.form}>
-          <Text style={styles.title}>{t.auth.login}</Text>
+          <Text style={styles.brand}>GreenSense</Text>
+          <Text style={styles.tagline}>{t.auth.welcomeSub}</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
+          {/* Formulaire */}
+          <View style={styles.form}>
+            <Text style={styles.title}>{t.auth.login}</Text>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.email}</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder={t.auth.emailPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
-          ) : null}
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.email}</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={t.auth.emailPlaceholder}
-              placeholderTextColor="#9ca3af"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.password}</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={t.auth.passwordPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                >
+                  <Text style={styles.eyeText}>{showPassword ? <Entypo name="eye-with-line" size={18} color="#424242" /> : <Entypo name="eye" size={18} color="#424242" />}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.password}</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder={t.auth.passwordPlaceholder}
-              placeholderTextColor="#9ca3af"
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity
-            onPress={() => router.push("/(auth)/forgot-password")}
-          >
-            <Text style={styles.forgotText}>{t.auth.forgotPassword}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.btn, loading && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.btnText}>{t.auth.login}</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.switchRow}>
-            <Text style={styles.switchText}>{t.auth.noAccount} </Text>
-            <TouchableOpacity onPress={() => router.push("/(auth)/register")}>
-              <Text style={styles.switchLink}>{t.auth.register}</Text>
+            <TouchableOpacity onPress={() => router.push("/(auth)/forgot-password")}>
+              <Text style={styles.forgotText}>{t.auth.forgotPassword}</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.btn, loading && styles.btnDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.btnText}>{t.auth.login}</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.switchRow}>
+              <Text style={styles.switchText}>{t.auth.noAccount} </Text>
+              <TouchableOpacity onPress={() => router.push("/(auth)/register")}>
+                <Text style={styles.switchLink}>{t.auth.register}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f9fafb",
+  container: { flex: 1, backgroundColor: "#f6f9f6" },
+  flex: { flex: 1 },
+  headerBg: {
+    position: "absolute",
+    top: 10,
+    left: -2,
+    right: -2,
+    height: 240,
+    backgroundColor: "#15803d",
+    overflow: "hidden",
+  },
+  blob1: {
+    position: "absolute",
+    top: -60,
+    right: -30,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: "#16a34a",
+    opacity: 0.6,
+  },
+  blob2: {
+    position: "absolute",
+    top: 60,
+    left: -50,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "#22c55e",
+    opacity: 0.4,
   },
   scroll: {
     flexGrow: 1,
-    padding: 24,
-  },
-  langBtn: {
-    alignSelf: "flex-end",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    marginBottom: 24,
-  },
-  langText: {
-    fontSize: 13,
-    color: "#6b7280",
-    fontWeight: "500",
-  },
-  logoArea: {
+    paddingTop: 70,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
     alignItems: "center",
-    marginBottom: 40,
   },
-  logoIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: "#f0fdf4",
+  logoCard: {
+    width: 88,
+    height: 88,
+    borderRadius: 100,
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    shadowColor: "#15803d",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  logoEmoji: {
-    fontSize: 36,
+  brand: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: "#fff",
+    marginTop: 8,
+    letterSpacing: -0.5,
   },
-  logoText: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#16a34a",
-    marginBottom: 4,
-  },
-  logoSub: {
+  tagline: {
     fontSize: 14,
-    color: "#6b7280",
+    color: "#dcfce7",
+    marginTop: 6,
+    marginBottom: 80,
     textAlign: "center",
   },
   form: {
+    width: "100%",
     backgroundColor: "#fff",
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowRadius: 16,
+    elevation: 4,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
-    color: "#111827",
+    color: "#424242",
     marginBottom: 20,
+    textAlign: "center"
   },
   errorBox: {
     backgroundColor: "#fef2f2",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#fecaca",
   },
-  errorText: {
-    color: "#dc2626",
-    fontSize: 13,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
+  errorText: { color: "#dc2626", fontSize: 13 },
+  inputGroup: { marginBottom: 16 },
   label: {
     fontSize: 13,
     fontWeight: "500",
     color: "#374151",
-    marginBottom: 6,
+    marginBottom: 8,
+  },
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    backgroundColor: "#f9fafb",
+    paddingHorizontal: 14,
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    flex: 1,
+    paddingVertical: 14,
     fontSize: 15,
     color: "#111827",
-    backgroundColor: "#fff",
   },
+  eyeBtn: { padding: 4 },
+  eyeText: { fontSize: 16 },
   forgotText: {
     fontSize: 13,
     color: "#16a34a",
     textAlign: "right",
     marginBottom: 20,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   btn: {
     backgroundColor: "#16a34a",
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
     marginBottom: 20,
+    shadowColor: "#16a34a",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  btnDisabled: {
-    opacity: 0.6,
-  },
-  btnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  switchText: {
-    fontSize: 14,
-    color: "#6b7280",
-  },
-  switchLink: {
-    fontSize: 14,
-    color: "#16a34a",
-    fontWeight: "600",
-  },
+  btnDisabled: { opacity: 0.6 },
+  btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  switchRow: { flexDirection: "row", justifyContent: "center" },
+  switchText: { fontSize: 14, color: "#6b7280" },
+  switchLink: { fontSize: 14, color: "#16a34a", fontWeight: "700" },
 });

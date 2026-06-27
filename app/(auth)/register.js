@@ -10,23 +10,23 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../../src/lib/firebase";
 import { useRouter } from "expo-router";
 import { useLanguage } from "../../src/context/LanguageContext";
 import { useAuth } from "../../src/context/AuthContext";
-import { normalizePhone, isValidMalagasyPhone } from "../../src/lib/phoneUtils";
+import Logo from "../../components/Logo";
+import Entypo from "@expo/vector-icons/Entypo";
 
 export default function RegisterScreen() {
   const [nom, setNom] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState("consommateur");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [telephone, setTelephone] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const router = useRouter();
   const { t, language, toggleLanguage } = useLanguage();
@@ -42,414 +42,299 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
-  if (!nom || !password || !confirmPassword) {
-    setError(t.auth.errors.generic);
-    return;
-  }
-  if (password !== confirmPassword) {
-    setError(t.auth.errors.passwordMismatch);
-    return;
-  }
-
-  // Pour agriculteur : téléphone obligatoire, email optionnel
-  let finalEmail = email;
-  if (role === "agriculteur") {
-    if (!telephone) {
-      setError("Le numéro de téléphone est obligatoire pour les agriculteurs");
-      return;
-    }
-    if (!isValidMalagasyPhone(telephone)) {
-      setError("Numéro de téléphone invalide (ex: 0341234567)");
-      return;
-    }
-    // Si pas d'email fourni, en générer un technique à partir du téléphone
-    if (!email) {
-      const normalizedPhone = normalizePhone(telephone).replace("+", "");
-      finalEmail = `${normalizedPhone}@greensense.mg`;
-    }
-  } else {
-    // Pour consommateur : email obligatoire
-    if (!email) {
+    if (!nom || !email || !password || !confirmPassword) {
       setError(t.auth.errors.generic);
       return;
     }
-  }
-
-  setError("");
-  setLoading(true);
-  try {
-    const { user } = await createUserWithEmailAndPassword(auth, finalEmail, password);
-
-    await setDoc(doc(db, "users", user.uid), {
-      nom,
-      email: finalEmail,
-      emailReel: email || null, // garder trace si un vrai email a été fourni
-      role,
-      telephone: role === "agriculteur" ? normalizePhone(telephone) : null,
-      isActive: true,
-      farmerStatus: role === "agriculteur" ? "pending" : null,
-      createdAt: serverTimestamp(),
-    });
-
-    const freshData = await refreshUserData();
-
-    if (freshData?.role === "agriculteur") {
-      router.replace("/(farmer)");
-    } else {
-      router.replace("/(consumer)");
+    if (password !== confirmPassword) {
+      setError(t.auth.errors.passwordMismatch);
+      return;
     }
-  } catch (e) {
-    setError(getErrorMessage(e.code));
-  } finally {
-    setLoading(false);
-  }
-};
+
+    setError("");
+    setLoading(true);
+    try {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+
+      await setDoc(doc(db, "users", user.uid), {
+        nom,
+        email,
+        role: "consommateur",
+        isActive: true,
+        createdAt: serverTimestamp(),
+      });
+
+      await refreshUserData();
+      router.replace("/(consumer)");
+    } catch (e) {
+      setError(getErrorMessage(e.code));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      {/* En-tête dégradé organique */}
+      <View style={styles.headerBg}>
+        <View style={styles.blob1} />
+        <View style={styles.blob2} />
+      </View>
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Bouton langue */}
-        <TouchableOpacity style={styles.langBtn} onPress={toggleLanguage}>
-          <Text style={styles.langText}>
-            {language === "fr" ? "🇬🇧 EN" : "🇫🇷 FR"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Bouton déconnexion temporaire pour tests */}
-        <TouchableOpacity
-          onPress={() => signOut(auth)}
-          style={{ padding: 12, alignItems: "flex-end" }}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={{ color: "red", fontSize: 12 }}>Déconnexion (test)</Text>
-        </TouchableOpacity>
-
-        {/* Logo */}
-        <View style={styles.logoArea}>
-          <View style={styles.logoIcon}>
-            <Text style={styles.logoEmoji}>🌿</Text>
-          </View>
-          <Text style={styles.logoText}>GreenSense</Text>
-        </View>
-
-        {/* Formulaire */}
-        <View style={styles.form}>
-          <Text style={styles.title}>{t.auth.register}</Text>
-
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {/* Nom */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nom complet</Text>
-            <TextInput
-              style={styles.input}
-              value={nom}
-              onChangeText={setNom}
-              placeholder="Rakoto Jean"
-              placeholderTextColor="#9ca3af"
-              autoCapitalize="words"
-            />
+          {/* Carte logo flottante */}
+          <View style={styles.logoCard}>
+            <Logo size={48} />
           </View>
 
-          {/* Email */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>
-              {t.auth.email}
-              {role === "agriculteur" && (
-                <Text style={styles.optional}> (optionnel)</Text>
-              )}
-            </Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={role === "agriculteur" ? "Laissez vide si vous n'en avez pas" : t.auth.emailPlaceholder}
-              placeholderTextColor="#9ca3af"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+          <Text style={styles.brand}>GreenSense</Text>
+          <Text style={styles.tagline}>{t.auth.welcomeSub}</Text>
 
-          {/* Mot de passe */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.password}</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder={t.auth.passwordPlaceholder}
-              placeholderTextColor="#9ca3af"
-              secureTextEntry
-            />
-          </View>
+          {/* Formulaire */}
+          <View style={styles.form}>
+            <Text style={styles.title}>{t.auth.register}</Text>
 
-          {/* Confirmer mot de passe */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.confirmPassword}</Text>
-            <TextInput
-              style={styles.input}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder={t.auth.passwordPlaceholder}
-              placeholderTextColor="#9ca3af"
-              secureTextEntry
-            />
-          </View>
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
 
-          {/* Rôle */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.role}</Text>
-            <View style={styles.roleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.roleBtn,
-                  role === "consommateur" && styles.roleBtnActive,
-                ]}
-                onPress={() => setRole("consommateur")}
-              >
-                <Text style={styles.roleEmoji}>🛒</Text>
-                <Text
-                  style={[
-                    styles.roleText,
-                    role === "consommateur" && styles.roleTextActive,
-                  ]}
-                >
-                  {t.auth.consumer}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.roleBtn,
-                  role === "agriculteur" && styles.roleBtnActive,
-                ]}
-                onPress={() => setRole("agriculteur")}
-              >
-                <Text style={styles.roleEmoji}>🌾</Text>
-                <Text
-                  style={[
-                    styles.roleText,
-                    role === "agriculteur" && styles.roleTextActive,
-                  ]}
-                >
-                  {t.auth.farmer}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Téléphone — uniquement pour agriculteurs */}
-          {role === "agriculteur" && (
+            {/* Nom */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>{t.auth.phone}</Text>
-              <TextInput
-                style={styles.input}
-                value={telephone}
-                onChangeText={setTelephone}
-                placeholder="0341234567"
-                placeholderTextColor="#9ca3af"
-                keyboardType="phone-pad"
-              />
-              <Text style={styles.hint}>
-                {t.auth.Phonedescription}
-              </Text>
+              <Text style={styles.label}>Nom complet</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={nom}
+                  onChangeText={setNom}
+                  placeholder="Rakoto Jean"
+                  placeholderTextColor="#9ca3af"
+                  autoCapitalize="words"
+                />
+              </View>
             </View>
-          )}
 
-          <TouchableOpacity
-            style={[styles.btn, loading && styles.btnDisabled]}
-            onPress={handleRegister}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.btnText}>{t.auth.register}</Text>
-            )}
-          </TouchableOpacity>
+            {/* Email */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.email}</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder={t.auth.emailPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
 
-          <View style={styles.switchRow}>
-            <Text style={styles.switchText}>{t.auth.hasAccount} </Text>
-            <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
-              <Text style={styles.switchLink}>{t.auth.login}</Text>
+            {/* Mot de passe */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.password}</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={t.auth.passwordPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                >
+                  {showPassword
+                    ? <Entypo name="eye-with-line" size={18} color="#424242" />
+                    : <Entypo name="eye" size={18} color="#424242" />}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Confirmer mot de passe */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.confirmPassword}</Text>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder={t.auth.passwordPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  secureTextEntry={!showPassword}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.btn, loading && styles.btnDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.btnText}>{t.auth.register}</Text>
+              )}
             </TouchableOpacity>
+
+            <View style={styles.switchRow}>
+              <Text style={styles.switchText}>{t.auth.hasAccount} </Text>
+              <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
+                <Text style={styles.switchLink}>{t.auth.login}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f9fafb",
+  container: { flex: 1, backgroundColor: "#f6f9f6" },
+  flex: { flex: 1 },
+  headerBg: {
+    position: "absolute",
+    top: 10,
+    left: -2,
+    right: -2,
+    height: 240,
+    backgroundColor: "#15803d",
+    overflow: "hidden",
+  },
+  blob1: {
+    position: "absolute",
+    top: -60,
+    right: -30,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: "#16a34a",
+    opacity: 0.6,
+  },
+  blob2: {
+    position: "absolute",
+    top: 60,
+    left: -50,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "#22c55e",
+    opacity: 0.4,
   },
   scroll: {
     flexGrow: 1,
-    padding: 24,
-  },
-  langBtn: {
-    alignSelf: "flex-end",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    marginBottom: 8,
-  },
-  langText: {
-    fontSize: 13,
-    color: "#6b7280",
-    fontWeight: "500",
-  },
-  logoArea: {
+    paddingTop: 70,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
     alignItems: "center",
-    marginBottom: 32,
   },
-  logoIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
-    backgroundColor: "#f0fdf4",
+  logoCard: {
+    width: 88,
+    height: 88,
+    borderRadius: 100,
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    shadowColor: "#15803d",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  logoEmoji: {
-    fontSize: 32,
+  brand: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: "#fff",
+    marginTop: 8,
+    letterSpacing: -0.5,
   },
-  logoText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#16a34a",
+  tagline: {
+    fontSize: 14,
+    color: "#dcfce7",
+    marginTop: 6,
+    marginBottom: 40,
+    textAlign: "center",
   },
   form: {
+    width: "100%",
     backgroundColor: "#fff",
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowRadius: 16,
+    elevation: 4,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
-    color: "#111827",
+    color: "#424242",
     marginBottom: 20,
+    textAlign: "center",
   },
   errorBox: {
     backgroundColor: "#fef2f2",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#fecaca",
   },
-  errorText: {
-    color: "#dc2626",
-    fontSize: 13,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
+  errorText: { color: "#dc2626", fontSize: 13 },
+  inputGroup: { marginBottom: 16 },
   label: {
     fontSize: 13,
     fontWeight: "500",
     color: "#374151",
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: "#111827",
-    backgroundColor: "#fff",
-  },
-  roleRow: {
+  inputWrap: {
     flexDirection: "row",
-    gap: 12,
-  },
-  roleBtn: {
-    flex: 1,
+    alignItems: "center",
     borderWidth: 1.5,
     borderColor: "#e5e7eb",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
+    borderRadius: 14,
     backgroundColor: "#f9fafb",
+    paddingHorizontal: 14,
   },
-  roleBtnActive: {
-    borderColor: "#16a34a",
-    backgroundColor: "#f0fdf4",
+  input: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: "#111827",
   },
-  roleEmoji: {
-    fontSize: 24,
-    marginBottom: 6,
-  },
-  roleText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#6b7280",
-    textAlign: "center",
-  },
-  roleTextActive: {
-    color: "#16a34a",
-  },
-
-  hint: {
-    fontSize: 11,
-    color: "#9ca3af",
-    marginTop: 4,
-  },
-  optional: {
-  fontSize: 11,
-  color: "#9ca3af",
-  fontWeight: "400",
-},
-
+  eyeBtn: { padding: 4 },
   btn: {
     backgroundColor: "#16a34a",
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
     marginBottom: 20,
-    marginTop: 8,
+    marginTop: 4,
+    shadowColor: "#16a34a",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  btnDisabled: {
-    opacity: 0.6,
-  },
-  btnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  switchText: {
-    fontSize: 14,
-    color: "#6b7280",
-  },
-  switchLink: {
-    fontSize: 14,
-    color: "#16a34a",
-    fontWeight: "600",
-  },
+  btnDisabled: { opacity: 0.6 },
+  btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  switchRow: { flexDirection: "row", justifyContent: "center" },
+  switchText: { fontSize: 14, color: "#6b7280" },
+  switchLink: { fontSize: 14, color: "#16a34a", fontWeight: "700" },
 });

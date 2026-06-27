@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { AuthProvider } from "../src/context/AuthContext";
 import { LanguageProvider } from "../src/context/LanguageContext";
@@ -9,7 +8,11 @@ export default function RootLayout() {
     <LanguageProvider>
       <AuthProvider>
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: true, title: "",}} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(consumer)" />
+        </Stack>
       </AuthProvider>
     </LanguageProvider>
   );
