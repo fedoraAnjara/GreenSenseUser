@@ -184,6 +184,13 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t.consumer.quickActions}</Text>
         <View style={styles.actionsRow}>
+        <TouchableOpacity
+          style={styles.actionCard}
+          onPress={() => router.push("/(consumer)/feed")}
+        >
+          <Text style={styles.actionEmoji}>📢</Text>
+          <Text style={styles.actionText}>Actualités</Text>
+        </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push("/(consumer)/chat")}

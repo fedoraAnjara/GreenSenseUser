@@ -6,20 +6,26 @@ import { useAuth } from "../src/context/AuthContext";
 export default function Index() {
   const { user, userData, loading } = useAuth();
 
-useEffect(() => {
-  if (loading || !userData) return;
+  useEffect(() => {
+    // Attendre uniquement la fin du chargement auth
+    if (loading) return;
 
-  if (!user) {
-    router.replace("/(auth)/login");
-    return;
-  }
+    // Pas connecté → login
+    if (!user) {
+      router.replace("/(auth)/login");
+      return;
+    }
 
-  if (userData.role === "agriculteur") {
-    router.replace("/(farmer)");
-  } else {
-    router.replace("/(consumer)");
-  }
-}, [user, userData, loading]);
+    // Connecté mais userData pas encore chargé → attendre
+    if (!userData) return;
+
+    // Rediriger selon le rôle
+    if (userData.role === "agriculteur") {
+      router.replace("/(farmer)");
+    } else {
+      router.replace("/(consumer)");
+    }
+  }, [user, userData, loading]);
 
   return (
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>

@@ -22,6 +22,8 @@ export const translations = {
       resetPassword: "Réinitialiser le mot de passe",
       resetPasswordSub: "Entrez votre email pour recevoir un lien de réinitialisation",
       resetSuccess: "Email envoyé ! Vérifiez votre boîte mail",
+      phone:"Numéro de téléphone",
+      Phonedescription:"Ce numéro permettra de publier vos annonces par SMS",
       errors: {
         invalidEmail: "Email invalide",
         wrongPassword: "Mot de passe incorrect",
@@ -231,6 +233,27 @@ farmer: {
     },
   },
 
+  feed: {
+  title: "Actualités",
+  subtitle: "Annonces des agriculteurs",
+  empty: "Aucune publication pour l'instant",
+  receivedBySms: "Reçu par SMS",
+  filters: {
+    all: "Tout",
+    vente: "Ventes",
+    atelier: "Ateliers",
+    promotion: "Promos",
+    stock: "Stocks",
+  },
+  types: {
+    vente: "Vente",
+    atelier: "Atelier",
+    promotion: "Promo",
+    stock: "Stock",
+    autre: "Annonce",
+  },
+},
+
   },
 
   en: {
@@ -256,6 +279,8 @@ farmer: {
       resetPassword: "Reset password",
       resetPasswordSub: "Enter your email to receive a reset link",
       resetSuccess: "Email sent! Check your inbox",
+      phone:"Phone number",
+      Phonedescription:"This phone number will let you make publications",
       errors: {
         invalidEmail: "Invalid email",
         wrongPassword: "Wrong password",
@@ -467,6 +492,26 @@ farmer: {
     },
   },
 
+feed: {
+  title: "News",
+  subtitle: "Farmer announcements",
+  empty: "No publications yet",
+  receivedBySms: "Received by SMS",
+  filters: {
+    all: "All",
+    vente: "Sales",
+    atelier: "Workshops",
+    promotion: "Promos",
+    stock: "Stocks",
+  },
+  types: {
+    vente: "Sale",
+    atelier: "Workshop",
+    promotion: "Promo",
+    stock: "Stock",
+    autre: "Announcement",
+  },
+},
 
   },
 };

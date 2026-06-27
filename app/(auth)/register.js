@@ -16,6 +16,7 @@ import { auth, db } from "../../src/lib/firebase";
 import { useRouter } from "expo-router";
 import { useLanguage } from "../../src/context/LanguageContext";
 import { useAuth } from "../../src/context/AuthContext";
+import { normalizePhone, isValidMalagasyPhone } from "../../src/lib/phoneUtils";
 
 export default function RegisterScreen() {
   const [nom, setNom] = useState("");
@@ -25,6 +26,7 @@ export default function RegisterScreen() {
   const [role, setRole] = useState("consommateur");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [telephone, setTelephone] = useState("");
 
   const router = useRouter();
   const { t, language, toggleLanguage } = useLanguage();
@@ -40,44 +42,68 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
-    if (!nom || !email || !password || !confirmPassword) {
+  if (!nom || !password || !confirmPassword) {
+    setError(t.auth.errors.generic);
+    return;
+  }
+  if (password !== confirmPassword) {
+    setError(t.auth.errors.passwordMismatch);
+    return;
+  }
+
+  // Pour agriculteur : téléphone obligatoire, email optionnel
+  let finalEmail = email;
+  if (role === "agriculteur") {
+    if (!telephone) {
+      setError("Le numéro de téléphone est obligatoire pour les agriculteurs");
+      return;
+    }
+    if (!isValidMalagasyPhone(telephone)) {
+      setError("Numéro de téléphone invalide (ex: 0341234567)");
+      return;
+    }
+    // Si pas d'email fourni, en générer un technique à partir du téléphone
+    if (!email) {
+      const normalizedPhone = normalizePhone(telephone).replace("+", "");
+      finalEmail = `${normalizedPhone}@greensense.mg`;
+    }
+  } else {
+    // Pour consommateur : email obligatoire
+    if (!email) {
       setError(t.auth.errors.generic);
       return;
     }
-    if (password !== confirmPassword) {
-      setError(t.auth.errors.passwordMismatch);
-      return;
+  }
+
+  setError("");
+  setLoading(true);
+  try {
+    const { user } = await createUserWithEmailAndPassword(auth, finalEmail, password);
+
+    await setDoc(doc(db, "users", user.uid), {
+      nom,
+      email: finalEmail,
+      emailReel: email || null, // garder trace si un vrai email a été fourni
+      role,
+      telephone: role === "agriculteur" ? normalizePhone(telephone) : null,
+      isActive: true,
+      farmerStatus: role === "agriculteur" ? "pending" : null,
+      createdAt: serverTimestamp(),
+    });
+
+    const freshData = await refreshUserData();
+
+    if (freshData?.role === "agriculteur") {
+      router.replace("/(farmer)");
+    } else {
+      router.replace("/(consumer)");
     }
-    setError("");
-    setLoading(true);
-    try {
-      const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      console.log("User created:", user.uid);
-
-      await setDoc(doc(db, "users", user.uid), {
-        nom,
-        email,
-        role,
-        isActive: true,
-        farmerStatus: role === "agriculteur" ? "pending" : null,
-        createdAt: serverTimestamp(),
-      });
-      console.log("Firestore doc created");
-
-      await refreshUserData();
-
-      if (role === "agriculteur") {
-        router.replace("/(farmer)");
-      } else {
-        router.replace("/(consumer)");
-      }
-    } catch (e) {
-      console.log("Error:", e.code, e.message);
-      setError(getErrorMessage(e.code));
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (e) {
+    setError(getErrorMessage(e.code));
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <KeyboardAvoidingView
@@ -136,12 +162,17 @@ export default function RegisterScreen() {
 
           {/* Email */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t.auth.email}</Text>
+            <Text style={styles.label}>
+              {t.auth.email}
+              {role === "agriculteur" && (
+                <Text style={styles.optional}> (optionnel)</Text>
+              )}
+            </Text>
             <TextInput
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder={t.auth.emailPlaceholder}
+              placeholder={role === "agriculteur" ? "Laissez vide si vous n'en avez pas" : t.auth.emailPlaceholder}
               placeholderTextColor="#9ca3af"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -215,6 +246,24 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Téléphone — uniquement pour agriculteurs */}
+          {role === "agriculteur" && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{t.auth.phone}</Text>
+              <TextInput
+                style={styles.input}
+                value={telephone}
+                onChangeText={setTelephone}
+                placeholder="0341234567"
+                placeholderTextColor="#9ca3af"
+                keyboardType="phone-pad"
+              />
+              <Text style={styles.hint}>
+                {t.auth.Phonedescription}
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.btn, loading && styles.btnDisabled]}
@@ -362,6 +411,18 @@ const styles = StyleSheet.create({
   roleTextActive: {
     color: "#16a34a",
   },
+
+  hint: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 4,
+  },
+  optional: {
+  fontSize: 11,
+  color: "#9ca3af",
+  fontWeight: "400",
+},
+
   btn: {
     backgroundColor: "#16a34a",
     borderRadius: 12,
