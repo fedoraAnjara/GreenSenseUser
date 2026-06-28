@@ -8,12 +8,13 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../src/lib/firebase";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
 import { useRouter } from "expo-router";
 import { getOrGenerateMenu, getCurrentDay } from "../../src/lib/menuService";
+import * as Location from "expo-location";
 
 export default function HomeScreen() {
   const { user, userData, logout } = useAuth();
@@ -27,27 +28,38 @@ export default function HomeScreen() {
   const [generatingMenu, setGeneratingMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showWeek, setShowWeek] = useState(false);
+  const [pointsProches, setPointsProches] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
+
+  // Distance à vol d'oiseau en km
+  const getDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
 
   const fetchData = async () => {
     if (!user) return;
     try {
-      // Profil santé
       const healthSnap = await getDoc(
         doc(db, "users", user.uid, "profilSante", "data")
       );
       const profile = healthSnap.exists() ? healthSnap.data() : null;
       setHealthProfile(profile);
 
-      // Menu
       setGeneratingMenu(true);
       const menuData = await getOrGenerateMenu(user.uid, profile);
       setMenu(menuData);
 
-      // Trouver le menu du jour
       const today = getCurrentDay();
       const dayMenu = menuData.semaine?.find((d) => d.jour === today);
       setTodayMenu(dayMenu);
-
     } catch (e) {
       console.error(e);
     } finally {
@@ -57,14 +69,67 @@ export default function HomeScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [user]);
+  const fetchPointsProches = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let coords = null;
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({});
+        coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setUserLocation(coords);
+      }
+
+      const snap = await getDocs(collection(db, "pointsDeVente"));
+      const points = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const enriched = await Promise.all(
+        points.map(async (point) => {
+          let produits = [];
+          if (point.agriculteurId) {
+            try {
+              const prodSnap = await getDocs(
+                collection(db, "agriculteurs", point.agriculteurId, "produits")
+              );
+              produits = prodSnap.docs
+                .map((p) => p.data())
+                .filter((p) => p.disponible !== false)
+                .slice(0, 3);
+            } catch (e) {}
+          }
+
+          let distance = null;
+          const pLat = point.latitude ?? point.lat;
+          const pLng = point.longitude ?? point.lng;
+          if (coords && pLat && pLng) {
+            distance = getDistance(coords.lat, coords.lng, pLat, pLng);
+          }
+
+          return { ...point, produits, distance };
+        })
+      );
+
+      enriched.sort((a, b) => {
+        if (a.distance == null) return 1;
+        if (b.distance == null) return -1;
+        return a.distance - b.distance;
+      });
+
+      setPointsProches(enriched);
+    } catch (e) {
+      console.error("Erreur points proches:", e);
+    }
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
+    fetchPointsProches();
   };
+
+  useEffect(() => {
+    fetchData();
+    fetchPointsProches();
+  }, [user]);
 
   if (loading) {
     return (
@@ -137,180 +202,283 @@ export default function HomeScreen() {
     </View>
   );
 
+  const typeConfig = {
+    vente: { emoji: "🛒", label: "Point de vente", color: "#16a34a", bg: "#f0fdf4" },
+    cultivation: { emoji: "🌾", label: "Cultivation", color: "#ca8a04", bg: "#fefce8" },
+    elevage: { emoji: "🐄", label: "Élevage", color: "#dc2626", bg: "#fef2f2" },
+  };
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scroll}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />
-      }
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.hello}>
-            {t.consumer.hello}, {userData?.nom?.split(" ")[0]} 👋
-          </Text>
-          <Text style={styles.subtitle}>{t.consumer.subtitle}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.avatarBtn}
-          onPress={() => router.push("/(consumer)/profile")}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {userData?.nom?.charAt(0).toUpperCase() || "U"}
+    <View style={styles.container}>
+      {/* Bande d'en-tête verte organique */}
+      <View style={styles.headerBg}>
+        <View style={styles.blob1} />
+        <View style={styles.blob2} />
+
+        <View style={styles.headerContent}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.hello}>
+              {t.consumer.hello}, {userData?.nom?.split(" ")[1] || userData?.nom?.split(" ")[0] || ""}
             </Text>
+            <Text style={styles.subtitle}>{t.consumer.subtitle}</Text>
           </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Bannière profil incomplet */}
-      {!healthProfile && (
-        <TouchableOpacity
-          style={styles.profileBanner}
-          onPress={() => router.push("/(consumer)/health-profile")}
-        >
-          <Text style={styles.profileBannerEmoji}>🏥</Text>
-          <View style={styles.profileBannerText}>
-            <Text style={styles.profileBannerTitle}>{t.consumer.completeProfile}</Text>
-            <Text style={styles.profileBannerSub}>{t.consumer.completeProfileSub}</Text>
-          </View>
-          <Text style={styles.profileBannerArrow}>›</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Actions rapides */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.consumer.quickActions}</Text>
-        <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push("/(consumer)/feed")}
-        >
-          <Text style={styles.actionEmoji}>📢</Text>
-          <Text style={styles.actionText}>Actualités</Text>
-        </TouchableOpacity>
           <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push("/(consumer)/chat")}
-          >
-            <Text style={styles.actionEmoji}>🤖</Text>
-            <Text style={styles.actionText}>{t.consumer.chat}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push("/(consumer)/map")}
-          >
-            <Text style={styles.actionEmoji}>🗺️</Text>
-            <Text style={styles.actionText}>{t.consumer.map}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.avatarBtn}
             onPress={() => router.push("/(consumer)/profile")}
           >
-            <Text style={styles.actionEmoji}>👤</Text>
-            <Text style={styles.actionText}>{t.consumer.profile}</Text>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {(userData?.nom?.split(" ")[1] || userData?.nom?.split(" ")[0] || "U").charAt(0).toUpperCase()}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Menu du jour */}
-      {generatingMenu ? (
-        <View style={styles.generatingBox}>
-          <ActivityIndicator color="#16a34a" />
-          <Text style={styles.generatingText}>Génération de votre menu personnalisé...</Text>
-        </View>
-      ) : todayMenu ? (
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />
+        }
+      >
+        {/* Bannière profil incomplet */}
+        {!healthProfile && (
+          <TouchableOpacity
+            style={styles.profileBanner}
+            onPress={() => router.push("/(consumer)/health-profile")}
+          >
+            <Text style={styles.profileBannerEmoji}>🏥</Text>
+            <View style={styles.profileBannerText}>
+              <Text style={styles.profileBannerTitle}>{t.consumer.completeProfile}</Text>
+              <Text style={styles.profileBannerSub}>{t.consumer.completeProfileSub}</Text>
+            </View>
+            <Text style={styles.profileBannerArrow}>›</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Actions rapides */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Menu du jour</Text>
-            <TouchableOpacity onPress={() => setShowWeek(!showWeek)}>
-              <Text style={styles.weekLink}>
-                {showWeek ? "Voir moins" : "Voir la semaine"}
-              </Text>
+          <Text style={styles.sectionTitle}>{t.consumer.quickActions}</Text>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push("/(consumer)/feed")}
+            >
+              <View style={[styles.actionIconBox, { backgroundColor: "#f5f3ff" }]}>
+                <Text style={styles.actionEmoji}>📢</Text>
+              </View>
+              <Text style={styles.actionText}>Actualités</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push("/(consumer)/chat")}
+            >
+              <View style={[styles.actionIconBox, { backgroundColor: "#eff6ff" }]}>
+                <Text style={styles.actionEmoji}>🤖</Text>
+              </View>
+              <Text style={styles.actionText}>{t.consumer.chat}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push("/(consumer)/map")}
+            >
+              <View style={[styles.actionIconBox, { backgroundColor: "#f0fdf4" }]}>
+                <Text style={styles.actionEmoji}>🗺️</Text>
+              </View>
+              <Text style={styles.actionText}>{t.consumer.map}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push("/(consumer)/profile")}
+            >
+              <View style={[styles.actionIconBox, { backgroundColor: "#fef3c7" }]}>
+                <Text style={styles.actionEmoji}>👤</Text>
+              </View>
+              <Text style={styles.actionText}>{t.consumer.profile}</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Jour actuel */}
-          <DayCard dayData={todayMenu} isToday={true} />
-
-          {/* Reste de la semaine */}
-          {showWeek && menu?.semaine
-            ?.filter((d) => d.jour !== todayMenu.jour)
-            .map((dayData) => (
-              <DayCard key={dayData.jour} dayData={dayData} isToday={false} />
-            ))}
         </View>
-      ) : null}
 
-      {/* Bouton déconnexion temporaire */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-        <Text style={styles.logoutText}>Déconnexion (test)</Text>
-      </TouchableOpacity>
+        {/* Carrousel points de vente proches */}
+        {pointsProches.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>📍 Près de vous</Text>
+              <TouchableOpacity onPress={() => router.push("/(consumer)/map")}>
+                <Text style={styles.weekLink}>Voir la carte</Text>
+              </TouchableOpacity>
+            </View>
 
-    </ScrollView>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.carouselContent}
+            >
+              {pointsProches.map((point) => {
+                const config = typeConfig[point.type] || typeConfig.vente;
+                return (
+                  <TouchableOpacity
+                    key={point.id}
+                    style={styles.posCard}
+                    onPress={() => router.push("/(consumer)/map")}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.posTypeBadge, { backgroundColor: config.bg }]}>
+                      <Text style={styles.posTypeEmoji}>{config.emoji}</Text>
+                      <Text style={[styles.posTypeText, { color: config.color }]}>{config.label}</Text>
+                    </View>
+
+                    <Text style={styles.posName} numberOfLines={1}>{point.nom}</Text>
+                    <Text style={styles.posFarmer} numberOfLines={1}>
+                      👤 {point.agriculteurNom || "Agriculteur"}
+                    </Text>
+
+                    {point.distance != null && (
+                      <Text style={styles.posDistance}>
+                        📍 À {point.distance < 1
+                          ? `${Math.round(point.distance * 1000)} m`
+                          : `${point.distance.toFixed(1)} km`} de vous
+                      </Text>
+                    )}
+
+                    {point.produits.length > 0 && (
+                      <View style={styles.posProduits}>
+                        {point.produits.map((prod, i) => (
+                          <View key={i} style={styles.posProduitChip}>
+                            <Text style={styles.posProduitText}>{prod.nom}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Menu du jour */}
+        {generatingMenu ? (
+          <View style={styles.generatingBox}>
+            <ActivityIndicator color="#16a34a" />
+            <Text style={styles.generatingText}>Génération de votre menu personnalisé...</Text>
+          </View>
+        ) : todayMenu ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Menu du jour</Text>
+              <TouchableOpacity onPress={() => setShowWeek(!showWeek)}>
+                <Text style={styles.weekLink}>
+                  {showWeek ? "Voir moins" : "Voir la semaine"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <DayCard dayData={todayMenu} isToday={true} />
+
+            {showWeek && menu?.semaine
+              ?.filter((d) => d.jour !== todayMenu.jour)
+              .map((dayData) => (
+                <DayCard key={dayData.jour} dayData={dayData} isToday={false} />
+              ))}
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafb",
+    backgroundColor: "#f6f9f6",
+  },
+  headerBg: {
+    backgroundColor: "#15805d",
+    paddingTop: 26,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
+    marginTop: 55,
+    overflow: "hidden",
+  },
+  blob1: {
+    position: "absolute",
+    top: -30,
+    right: -20,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: "#16a34a",
+    opacity: 0.5,
+  },
+  blob2: {
+    position: "absolute",
+    bottom: -40,
+    left: -30,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "#22c55e",
+    opacity: 0.35,
+  },
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  hello: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#dcfce7",
+    marginTop: 4,
+  },
+  avatarBtn: {},
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  scrollView: {
+    flex: 1,
   },
   scroll: {
     padding: 20,
+    paddingTop: 20,
     paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f9fafb",
+    backgroundColor: "#f6f9f6",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
     color: "#6b7280",
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
-    paddingTop: 20,
-  },
-  hello: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#6b7280",
-    marginTop: 4,
-  },
-  avatarBtn: {
-    marginTop: 4,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#16a34a",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
   profileBanner: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fffbeb",
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 20,
     borderWidth: 1,
@@ -335,54 +503,62 @@ const styles = StyleSheet.create({
     fontWeight: "300",
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 22,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   weekLink: {
     fontSize: 13,
     color: "#16a34a",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   actionsRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   actionCard: {
     flex: 1,
     backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
-  actionEmoji: {
-    fontSize: 28,
+  actionIconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
+  actionEmoji: {
+    fontSize: 24,
+  },
   actionText: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 11,
+    fontWeight: "600",
     color: "#374151",
     textAlign: "center",
   },
   generatingBox: {
     backgroundColor: "#fff",
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 20,
     alignItems: "center",
     gap: 10,
@@ -397,16 +573,16 @@ const styles = StyleSheet.create({
   },
   dayCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     marginBottom: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#f3f4f6",
   },
   dayCardToday: {
     borderColor: "#16a34a",
@@ -486,13 +662,49 @@ const styles = StyleSheet.create({
     color: "#16a34a",
     lineHeight: 18,
   },
-  logoutBtn: {
+  carouselContent: {
+    paddingRight: 8,
+    gap: 12,
+  },
+  posCard: {
+    width: 220,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#f3f4f6",
+  },
+  posTypeBadge: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    marginTop: 8,
+    alignSelf: "flex-start",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginBottom: 10,
   },
-  logoutText: {
-    fontSize: 13,
-    color: "#ef4444",
+  posTypeEmoji: { fontSize: 12 },
+  posTypeText: { fontSize: 11, fontWeight: "600" },
+  posName: { fontSize: 15, fontWeight: "700", color: "#111827" },
+  posFarmer: { fontSize: 12, color: "#6b7280", marginTop: 3 },
+  posDistance: { fontSize: 12, color: "#16a34a", fontWeight: "600", marginTop: 6 },
+  posProduits: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 10,
   },
+  posProduitChip: {
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  posProduitText: { fontSize: 11, color: "#374151", fontWeight: "500" },
 });
