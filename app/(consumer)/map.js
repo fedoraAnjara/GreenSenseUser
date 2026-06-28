@@ -14,8 +14,7 @@ import * as Location from "expo-location";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../src/lib/firebase";
 import { useLanguage } from "../../src/context/LanguageContext";
-import { useRouter } from "expo-router";
-
+import { useRouter, useLocalSearchParams } from "expo-router";
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const MARKER_COLORS = {
@@ -61,6 +60,7 @@ const getRoute = async (fromLat, fromLon, toLat, toLon) => {
 export default function MapScreen() {
   const { t } = useLanguage();
   const router = useRouter();
+  const { pointId } = useLocalSearchParams();
   const mapRef = useRef(null);
 
   // Animations
@@ -103,6 +103,16 @@ export default function MapScreen() {
     };
     init();
   }, []);
+
+  // Auto-sélection du point depuis la fiche agriculteur
+  useEffect(() => {
+    if (pointId && points.length > 0 && location) {
+      const target = points.find((p) => p.id === pointId);
+      if (target) {
+        handleMarkerPress(target);
+      }
+    }
+  }, [pointId, points, location]);
 
   // Ouvrir fiche détail
   const openDetail = () => {

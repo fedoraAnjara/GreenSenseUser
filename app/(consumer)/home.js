@@ -322,7 +322,7 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     key={point.id}
                     style={styles.posCard}
-                    onPress={() => router.push("/(consumer)/map")}
+                    onPress={() => router.push(`/(consumer)/agriculteur/${point.agriculteurId}`)}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.posTypeBadge, { backgroundColor: config.bg }]}>

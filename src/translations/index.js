@@ -141,6 +141,19 @@ export const translations = {
     },
   },
 
+  farmerProfile: {
+  title: "Fiche agriculteur",
+  products: "Catalogue de produits",
+  noProducts: "Aucun produit pour le moment",
+  available: "Disponible",
+  unavailable: "Épuisé",
+  viewOnMap: "Voir sur la carte",
+  certifications: "Certifications",
+  about: "À propos",
+  publications: "Annonces récentes",
+  noPublications: "Aucune annonce récente",
+},
+
   feed: {
   title: "Actualités",
   subtitle: "Annonces des agriculteurs",
@@ -307,6 +320,19 @@ export const translations = {
       ],
     },
   },
+
+  farmerProfile: {
+  title: "Farmer profile",
+  products: "Product catalog",
+  noProducts: "No products yet",
+  available: "Available",
+  unavailable: "Out of stock",
+  viewOnMap: "View on map",
+  certifications: "Certifications",
+  about: "About",
+  publications: "Recent announcements",
+  noPublications: "No recent announcements",
+},
 
 feed: {
   title: "News",
