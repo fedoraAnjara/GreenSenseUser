@@ -50,28 +50,33 @@ export default function FarmerProfileScreen() {
     const fetchData = async () => {
       if (!id) return;
       try {
-        // 1. Infos de l'agriculteur (users + agriculteurs)
-        const userSnap = await getDoc(doc(db, "users", id));
+        // 1. Infos agriculteur (collection agriculteurs publique)
         const agriSnap = await getDoc(doc(db, "agriculteurs", id));
-        const userData = userSnap.exists() ? userSnap.data() : {};
         const agriData = agriSnap.exists() ? agriSnap.data() : {};
-        setAgriculteur({ ...userData, ...agriData });
 
-        // 2. Point de vente lié
+        // 2. Point de vente lié (contient agriculteurNom)
         const pdvSnap = await getDocs(
           query(collection(db, "pointsDeVente"), where("agriculteurId", "==", id))
         );
+        let pdvData = null;
         if (!pdvSnap.empty) {
-          setPointDeVente({ id: pdvSnap.docs[0].id, ...pdvSnap.docs[0].data() });
+          pdvData = { id: pdvSnap.docs[0].id, ...pdvSnap.docs[0].data() };
+          setPointDeVente(pdvData);
         }
 
-        // 3. Catalogue produits
+        // Combiner : nom vient du point de vente, reste de agriculteurs
+        setAgriculteur({
+          nom: pdvData?.agriculteurNom || agriData.nomFerme || "Agriculteur",
+          ...agriData,
+        });
+
+        // 3. Catalogue produits (public)
         const prodSnap = await getDocs(
           collection(db, "agriculteurs", id, "produits")
         );
         setProduits(prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        // 4. Publications approuvées de cet agriculteur
+        // 4. Publications approuvées (public)
         const pubSnap = await getDocs(
           query(
             collection(db, "publications"),
@@ -164,8 +169,8 @@ export default function FarmerProfileScreen() {
 
           {pointDeVente && (
             <TouchableOpacity
-            style={styles.mapBtn}
-            onPress={() => router.push(`/(consumer)/map?pointId=${pointDeVente.id}`)}
+              style={styles.mapBtn}
+              onPress={() => router.push(`/(consumer)/map?pointId=${pointDeVente.id}`)}
             >
               <Text style={styles.mapBtnText}>🗺️ {t.farmerProfile.viewOnMap}</Text>
             </TouchableOpacity>

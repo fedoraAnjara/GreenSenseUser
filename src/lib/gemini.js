@@ -5,7 +5,7 @@ const MODEL = "gemini-2.5-flash";
 const GEMINI_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-export async function sendMessageToGemini(messages, systemPrompt) {
+export async function sendMessageToGemini(messages, systemPrompt, retries = 3) {
   const contents = messages
     .filter((msg) => msg.role !== "system")
     .map((msg) => ({
@@ -20,26 +20,43 @@ export async function sendMessageToGemini(messages, systemPrompt) {
     contents,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 1024,
     },
   };
 
-  const response = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  const data = await response.json();
+      const data = await response.json();
 
-  if (!response.ok) {
-    console.log(data);
-    throw new Error(data?.error?.message || "Gemini API error");
+      if (!response.ok) {
+        // Erreur 503 = surcharge, on réessaie
+        if ((response.status === 503 || response.status === 429) && attempt < retries) {
+          console.log(`Tentative ${attempt} échouée (surcharge), nouvelle tentative...`);
+          await new Promise((r) => setTimeout(r, 1500 * attempt)); // attente progressive
+          continue;
+        }
+        throw new Error(data?.error?.message || "Gemini API error");
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      // Retirer le Markdown résiduel
+      const cleaned = text
+        .replace(/\*\*/g, "")
+        .replace(/^\s*[\*\-]\s+/gm, "• ")
+        .trim();
+      return cleaned;
+      
+    } catch (error) {
+      if (attempt === retries) throw error;
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
   }
-
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
 export async function generateWeeklyMenu(healthProfile) {
