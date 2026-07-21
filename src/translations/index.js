@@ -58,6 +58,14 @@ export const translations = {
   updateSuccess: "Profil mis à jour avec succès",
   kg: "kg",
   cm: "cm",
+  language: "Langue",
+  about: "À propos",
+  help: "Aide et assistance",
+  legal: "Mentions légales",
+  use: "Conditions d'utilisation",
+  confidence: "Politique de confidentialité",
+  soon:"Bientôt",
+
 },
 
     // Consumer
@@ -237,6 +245,15 @@ export const translations = {
   updateSuccess: "Profile updated successfully",
   kg: "kg",
   cm: "cm",
+  language: "language",
+  about: "about",
+  help: "help & support",
+  legal: "Legal Information",
+  use: "Terms of Use",
+  confidence: "Privacy",
+  soon:"Soon",
+
+
 },
 
     // Consumer

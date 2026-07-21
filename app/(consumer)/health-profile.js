@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,13 +9,11 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../src/lib/firebase";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
-import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
-import { auth } from "../../src/lib/firebase"
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 const PATHOLOGIES = [
   "Diabète", "Hypertension", "Anémie", "Obésité",
@@ -33,9 +31,11 @@ const ALLERGIES = [
 ];
 
 export default function HealthProfileScreen() {
-const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
+  const { mode } = useLocalSearchParams();
+  const isEditMode = mode === "edit";
 
   const [poids, setPoids] = useState("");
   const [taille, setTaille] = useState("");
@@ -43,6 +43,30 @@ const { user, logout } = useAuth();
   const [selectedObjectifs, setSelectedObjectifs] = useState([]);
   const [selectedAllergies, setSelectedAllergies] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Charger le profil existant pour pré-remplir
+  useEffect(() => {
+    const loadExisting = async () => {
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid, "profilSante", "data"));
+        if (snap.exists()) {
+          const data = snap.data();
+          setPoids(data.poids ? String(data.poids) : "");
+          setTaille(data.taille ? String(data.taille) : "");
+          setSelectedPathologies(data.pathologies || []);
+          setSelectedObjectifs(data.objectifs || []);
+          setSelectedAllergies(data.allergies || []);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    loadExisting();
+  }, [user]);
 
   const toggleItem = (item, list, setList) => {
     if (list.includes(item)) {
@@ -54,9 +78,9 @@ const { user, logout } = useAuth();
 
   const calcIMC = () => {
     const p = parseFloat(poids);
-    const t = parseFloat(taille) / 100;
-    if (!p || !t) return null;
-    return (p / (t * t)).toFixed(1);
+    const ta = parseFloat(taille) / 100;
+    if (!p || !ta) return null;
+    return (p / (ta * ta)).toFixed(1);
   };
 
   const handleSave = async () => {
@@ -79,7 +103,11 @@ const { user, logout } = useAuth();
           updatedAt: serverTimestamp(),
         }
       );
-      router.replace("/(consumer)");
+      if (isEditMode) {
+        router.back();
+      } else {
+        router.replace("/(consumer)");
+      }
     } catch (e) {
       Alert.alert("Erreur", "Une erreur est survenue");
     } finally {
@@ -89,8 +117,15 @@ const { user, logout } = useAuth();
 
   const imc = calcIMC();
 
+  if (loadingData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#16a34a" />
+      </View>
+    );
+  }
+
   return (
-    
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.scroll}
@@ -98,6 +133,11 @@ const { user, logout } = useAuth();
     >
       {/* Header */}
       <View style={styles.header}>
+        {isEditMode && (
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Text style={styles.backText}>‹</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.title}>Mon profil de santé</Text>
         <Text style={styles.subtitle}>
           Ces informations nous permettent de personnaliser vos recommandations nutritionnelles
@@ -227,13 +267,7 @@ const { user, logout } = useAuth();
         </View>
       </View>
 
-      {/* Bouton */}
-<TouchableOpacity
-  onPress={logout}
-  style={{ padding: 12, alignItems: "flex-end" }}
->
-  <Text style={{ color: "red" }}>Déconnexion (test)</Text>
-</TouchableOpacity>
+      {/* Bouton enregistrer */}
       <TouchableOpacity
         style={[styles.btn, loading && styles.btnDisabled]}
         onPress={handleSave}
@@ -246,21 +280,22 @@ const { user, logout } = useAuth();
         )}
       </TouchableOpacity>
 
+      {/* Bouton passer — uniquement en onboarding */}
+      {!isEditMode && (
         <TouchableOpacity
-        style={styles.skipBtn}
-        onPress={async () => {
+          style={styles.skipBtn}
+          onPress={async () => {
             try {
-            
-            await updateDoc(doc(db, "users", user.uid), {
+              await updateDoc(doc(db, "users", user.uid), {
                 healthProfilePrompted: true,
-            });
+              });
             } catch (e) {}
             router.replace("/(consumer)/home");
-        }}
+          }}
         >
-        <Text style={styles.skipText}>{t.common.skip}</Text>
+          <Text style={styles.skipText}>{t.common.skip}</Text>
         </TouchableOpacity>
-
+      )}
     </ScrollView>
   );
 }
@@ -270,12 +305,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f9fafb",
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+  },
   scroll: {
     padding: 24,
     paddingBottom: 40,
   },
   header: {
     marginBottom: 24,
+    paddingTop: 28,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#f3f4f6",
+    marginBottom: 12,
+  },
+  backText: {
+    fontSize: 24,
+    color: "#374151",
+    lineHeight: 28,
   },
   title: {
     fontSize: 24,
