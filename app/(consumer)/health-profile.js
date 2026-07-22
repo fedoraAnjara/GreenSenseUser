@@ -15,20 +15,159 @@ import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
+// Listes prédéfinies (sans « Autre », géré séparément comme saisie libre)
 const PATHOLOGIES = [
   "Diabète", "Hypertension", "Anémie", "Obésité",
-  "Cholestérol", "Insuffisance rénale", "Autre",
+  "Cholestérol", "Insuffisance rénale",
 ];
 
 const OBJECTIFS = [
   "Perte de poids", "Prise de masse", "Équilibre alimentaire",
-  "Gestion du diabète", "Réduction du cholestérol", "Autre",
+  "Gestion du diabète", "Réduction du cholestérol",
 ];
 
 const ALLERGIES = [
   "Gluten", "Lactose", "Arachides", "Fruits de mer",
-  "Œufs", "Soja", "Autre",
+  "Œufs", "Soja",
 ];
+
+/**
+ * Sélecteur d'étiquettes avec saisie libre via « Autre ».
+ * Les valeurs personnalisées sont stockées directement dans la liste.
+ */
+function TagSelector({
+  title,
+  subtitle,
+  options,
+  selected,
+  setSelected,
+  tagActiveStyle,
+  tagTextActiveStyle,
+  accentColor,
+  placeholder,
+}) {
+  const [otherOpen, setOtherOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const customs = selected.filter((s) => !options.includes(s));
+
+  // Ouvrir automatiquement la saisie si des valeurs personnalisées existent déjà
+  useEffect(() => {
+    if (customs.length > 0) setOtherOpen(true);
+  }, [customs.length]);
+
+  const toggle = (item) => {
+    setSelected(
+      selected.includes(item)
+        ? selected.filter((i) => i !== item)
+        : [...selected, item]
+    );
+  };
+
+  const toggleOther = () => {
+    if (otherOpen) {
+      // Fermer : on retire les valeurs personnalisées
+      setSelected(selected.filter((s) => options.includes(s)));
+      setDraft("");
+      setOtherOpen(false);
+    } else {
+      setOtherOpen(true);
+    }
+  };
+
+  const addCustom = () => {
+    const value = draft.trim();
+    if (!value) return;
+    const exists = selected.some(
+      (s) => s.toLowerCase() === value.toLowerCase()
+    );
+    if (!exists) setSelected([...selected, value]);
+    setDraft("");
+  };
+
+  const removeCustom = (value) => {
+    setSelected(selected.filter((s) => s !== value));
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionSub}>{subtitle}</Text>
+
+      <View style={styles.tags}>
+        {options.map((item) => (
+          <TouchableOpacity
+            key={item}
+            style={[styles.tag, selected.includes(item) && tagActiveStyle]}
+            onPress={() => toggle(item)}
+          >
+            <Text
+              style={[
+                styles.tagText,
+                selected.includes(item) && tagTextActiveStyle,
+              ]}
+            >
+              {item}
+            </Text>
+          </TouchableOpacity>
+        ))}
+
+        {/* Étiquette « Autre » : ouvre la saisie libre */}
+        <TouchableOpacity
+          style={[styles.tag, otherOpen && tagActiveStyle]}
+          onPress={toggleOther}
+        >
+          <Text style={[styles.tagText, otherOpen && tagTextActiveStyle]}>
+            {otherOpen ? "Autre ✕" : "Autre +"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Saisie libre */}
+      {otherOpen && (
+        <View style={styles.otherBlock}>
+          <View style={styles.otherRow}>
+            <TextInput
+              style={styles.otherInput}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={placeholder}
+              placeholderTextColor="#9ca3af"
+              onSubmitEditing={addCustom}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: accentColor }]}
+              onPress={addCustom}
+            >
+              <Text style={styles.addBtnText}>Ajouter</Text>
+            </TouchableOpacity>
+          </View>
+
+          {customs.length > 0 && (
+            <View style={styles.customsRow}>
+              {customs.map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.customChip, { borderColor: accentColor }]}
+                  onPress={() => removeCustom(value)}
+                >
+                  <Text style={[styles.customChipText, { color: accentColor }]}>
+                    {value}  ✕
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <Text style={styles.otherHint}>
+            Appuyez sur une étiquette personnalisée pour la retirer.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function HealthProfileScreen() {
   const { user } = useAuth();
@@ -67,14 +206,6 @@ export default function HealthProfileScreen() {
     };
     loadExisting();
   }, [user]);
-
-  const toggleItem = (item, list, setList) => {
-    if (list.includes(item)) {
-      setList(list.filter((i) => i !== item));
-    } else {
-      setList([...list, item]);
-    }
-  };
 
   const calcIMC = () => {
     const p = parseFloat(poids);
@@ -187,85 +318,43 @@ export default function HealthProfileScreen() {
       </View>
 
       {/* Pathologies */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🏥 Pathologies</Text>
-        <Text style={styles.sectionSub}>Sélectionnez vos conditions médicales (optionnel)</Text>
-        <View style={styles.tags}>
-          {PATHOLOGIES.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[
-                styles.tag,
-                selectedPathologies.includes(item) && styles.tagActive,
-              ]}
-              onPress={() => toggleItem(item, selectedPathologies, setSelectedPathologies)}
-            >
-              <Text
-                style={[
-                  styles.tagText,
-                  selectedPathologies.includes(item) && styles.tagTextActive,
-                ]}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+      <TagSelector
+        title="🏥 Pathologies"
+        subtitle="Sélectionnez vos conditions médicales (optionnel)"
+        options={PATHOLOGIES}
+        selected={selectedPathologies}
+        setSelected={setSelectedPathologies}
+        tagActiveStyle={styles.tagActive}
+        tagTextActiveStyle={styles.tagTextActive}
+        accentColor="#16a34a"
+        placeholder="Ex : Asthme, Arthrose..."
+      />
 
       {/* Objectifs */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🎯 Objectifs nutritionnels</Text>
-        <Text style={styles.sectionSub}>Que souhaitez-vous accomplir ?</Text>
-        <View style={styles.tags}>
-          {OBJECTIFS.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[
-                styles.tag,
-                selectedObjectifs.includes(item) && styles.tagActiveBlue,
-              ]}
-              onPress={() => toggleItem(item, selectedObjectifs, setSelectedObjectifs)}
-            >
-              <Text
-                style={[
-                  styles.tagText,
-                  selectedObjectifs.includes(item) && styles.tagTextActiveBlue,
-                ]}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+      <TagSelector
+        title="🎯 Objectifs nutritionnels"
+        subtitle="Que souhaitez-vous accomplir ?"
+        options={OBJECTIFS}
+        selected={selectedObjectifs}
+        setSelected={setSelectedObjectifs}
+        tagActiveStyle={styles.tagActiveBlue}
+        tagTextActiveStyle={styles.tagTextActiveBlue}
+        accentColor="#2563eb"
+        placeholder="Ex : Améliorer la digestion..."
+      />
 
       {/* Allergies */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>⚠️ Allergies alimentaires</Text>
-        <Text style={styles.sectionSub}>Aliments à exclure de vos recommandations</Text>
-        <View style={styles.tags}>
-          {ALLERGIES.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[
-                styles.tag,
-                selectedAllergies.includes(item) && styles.tagActiveRed,
-              ]}
-              onPress={() => toggleItem(item, selectedAllergies, setSelectedAllergies)}
-            >
-              <Text
-                style={[
-                  styles.tagText,
-                  selectedAllergies.includes(item) && styles.tagTextActiveRed,
-                ]}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+      <TagSelector
+        title="⚠️ Allergies alimentaires"
+        subtitle="Aliments à exclure de vos recommandations"
+        options={ALLERGIES}
+        selected={selectedAllergies}
+        setSelected={setSelectedAllergies}
+        tagActiveStyle={styles.tagActiveRed}
+        tagTextActiveStyle={styles.tagTextActiveRed}
+        accentColor="#dc2626"
+        placeholder="Ex : Sésame, Fraise..."
+      />
 
       {/* Bouton enregistrer */}
       <TouchableOpacity
@@ -451,6 +540,63 @@ const styles = StyleSheet.create({
   tagTextActiveRed: {
     color: "#dc2626",
   },
+
+  // Saisie libre « Autre »
+  otherBlock: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f3f4f6",
+  },
+  otherRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  otherInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#111827",
+    backgroundColor: "#fff",
+  },
+  addBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  addBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  customsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  customChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    backgroundColor: "#fff",
+  },
+  customChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  otherHint: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 8,
+  },
+
   btn: {
     backgroundColor: "#16a34a",
     borderRadius: 12,
