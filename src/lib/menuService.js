@@ -31,20 +31,16 @@ export const getOrGenerateMenu = async (userId, healthProfile) => {
 
     if (menuSnap.exists()) {
       const data = menuSnap.data();
-      console.log("Menu chargé depuis Firestore:", data);
 
       // S'assurer que semaine est bien un tableau
       if (Array.isArray(data.semaine)) {
         return data;
       }
       // Si ce n'est pas un tableau, régénérer
-      console.log("Format invalide, régénération...");
     }
 
     // Générer un nouveau menu
-    console.log("Génération d'un nouveau menu...");
     const menuData = await generateWeeklyMenu(healthProfile);
-    console.log("Menu généré:", menuData);
 
     // Vérifier que la structure est correcte
     if (!menuData?.semaine || !Array.isArray(menuData.semaine)) {
