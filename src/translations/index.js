@@ -42,6 +42,28 @@ export const translations = {
       name: "Nom complet",
       email: "Email",
       role: "Rôle",
+      changePassword: "Changer le mot de passe",
+      changeEmail: "Changer l'adresse e-mail",
+
+      passwordSubtitle:
+        "Pour votre sécurité, confirmez votre mot de passe actuel.",
+      emailSubtitle:
+        "Un lien de confirmation sera envoyé à la nouvelle adresse. Le changement ne prendra effet qu'après validation.",
+
+      currentPassword: "Mot de passe actuel",
+      newPassword: "Nouveau mot de passe",
+      newEmail: "Nouvelle adresse e-mail",
+
+      passwordPlaceholder: "••••••••",
+      newPasswordPlaceholder: "Au moins 6 caractères",
+      newEmailPlaceholder: "nouvelle@email.com",
+      deleteAccount: "Supprimer mon compte",
+      cancel: "Annuler",
+      confirm: "Confirmer",
+      accountSecurity: "Compte et sécurité",
+      profilePhoto: "Photo de profil",
+      password: "Mot de passe",
+      emailAddress: "Adresse e-mail",
       editHealth: "Modifier mon profil santé",
       noHealthData: "Aucun profil de santé renseigné",
       completeNow: "Compléter maintenant",
@@ -88,6 +110,36 @@ export const translations = {
       noNearbyPoints: "Aucun point de vente à proximité",
       lastRecommendation: "Dernière recommandation",
       quickActions: "Actions rapides",
+        loading: "Chargement...",
+  generatingMenu: "Génération de votre menu...",
+  generatingPersonalizedMenu: "Génération de votre menu personnalisé...",
+
+  breakfast: "Petit-déjeuner",
+  lunch: "Déjeuner",
+  dinner: "Dîner",
+  snack: "Collation",
+
+  today: "Aujourd'hui",
+  todayMenu: "Menu du jour",
+
+  news: "Actualités",
+
+  nearYou: "Près de vous",
+  viewMap: "Voir la carte",
+
+  salePoint: "Point de vente",
+  cultivation: "Culture",
+  livestock: "Élevage",
+
+  farmer: "Agriculteur",
+
+  showWeek: "Voir la semaine",
+  showLess: "Voir moins",
+
+  at: "À",
+  fromYou: "de vous",
+  meter: "m",
+  kilometer: "km",
     },
 
     // Common
@@ -242,6 +294,28 @@ export const translations = {
       name: "Full name",
       email: "Email",
       role: "Role",
+      changePassword: "Change Password",
+      changeEmail: "Change Email Address",
+
+      passwordSubtitle:
+        "For your security, please confirm your current password.",
+      emailSubtitle:
+        "A confirmation link will be sent to the new email address. The change will take effect only after confirmation.",
+
+      currentPassword: "Current Password",
+      newPassword: "New Password",
+      newEmail: "New Email Address",
+
+      passwordPlaceholder: "••••••••",
+      newPasswordPlaceholder: "At least 6 characters",
+      newEmailPlaceholder: "new@email.com",
+      deleteAccount: "Delete my account",
+      cancel: "Cancel",
+      confirm: "Confirm",
+      accountSecurity: "Account & Security",
+      profilePhoto: "Profile Photo",
+      password: "Password",
+      emailAddress: "Email Address",
       editHealth: "Edit health profile",
       noHealthData: "No health profile provided",
       completeNow: "Complete now",
@@ -288,6 +362,36 @@ export const translations = {
       noNearbyPoints: "No nearby selling points",
       lastRecommendation: "Last recommendation",
       quickActions: "Quick actions",
+        loading: "Loading...",
+  generatingMenu: "Generating your menu...",
+  generatingPersonalizedMenu: "Generating your personalized menu...",
+
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snack",
+
+  today: "Today",
+  todayMenu: "Today's Menu",
+
+  news: "News",
+
+  nearYou: "Near You",
+  viewMap: "View Map",
+
+  salePoint: "Market",
+  cultivation: "Crop Farming",
+  livestock: "Livestock",
+
+  farmer: "Farmer",
+
+  showWeek: "View Week",
+  showLess: "Show Less",
+
+  at: "",
+  fromYou: "away",
+  meter: "m",
+  kilometer: "km",
     },
 
     // Common

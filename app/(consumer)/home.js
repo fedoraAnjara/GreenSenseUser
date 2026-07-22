@@ -15,6 +15,7 @@ import { useLanguage } from "../../src/context/LanguageContext";
 import { useRouter } from "expo-router";
 import { getOrGenerateMenu, getCurrentDay } from "../../src/lib/menuService";
 import * as Location from "expo-location";
+import { Image } from "react-native";
 
 export default function HomeScreen() {
   const { user, userData, logout } = useAuth();
@@ -30,6 +31,7 @@ export default function HomeScreen() {
   const [showWeek, setShowWeek] = useState(false);
   const [pointsProches, setPointsProches] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
+  const [avatar, setAvatar] = useState(null);
 
   // Distance à vol d'oiseau en km
   const getDistance = (lat1, lon1, lat2, lon2) => {
@@ -126,17 +128,33 @@ export default function HomeScreen() {
     fetchPointsProches();
   };
 
-  useEffect(() => {
-    fetchData();
-    fetchPointsProches();
-  }, [user]);
+useEffect(() => {
+  fetchData();
+  fetchPointsProches();
+
+  const fetchAvatar = async () => {
+    if (!user) return;
+
+    try {
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+
+      if (userSnap.exists()) {
+        setAvatar(userSnap.data().photoBase64 || null);
+      }
+    } catch (error) {
+      console.error("Erreur avatar :", error);
+    }
+  };
+
+  fetchAvatar();
+}, [user]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#16a34a" />
         <Text style={styles.loadingText}>
-          {generatingMenu ? "Génération de votre menu..." : "Chargement..."}
+          {generatingMenu ? t.consumer.generatingMenu : t.consumer.loading}
         </Text>
       </View>
     );
@@ -160,35 +178,35 @@ export default function HomeScreen() {
     <View style={[styles.dayCard, isToday && styles.dayCardToday]}>
       <View style={styles.dayHeader}>
         <Text style={[styles.dayName, isToday && styles.dayNameToday]}>
-          {dayData.jour} {isToday ? "— Aujourd'hui" : ""}
+          {dayData.jour} {isToday ? `— ${t.consumer.today}` : ""}
         </Text>
         <Text style={styles.dayCalories}>{dayData.totalCalories} kcal</Text>
       </View>
 
       <MealCard
         emoji={dayData.petitDejeuner.emoji}
-        label="Petit-déjeuner"
+        label={t.consumer.breakfast}
         plat={dayData.petitDejeuner.plat}
         description={dayData.petitDejeuner.description}
         calories={dayData.petitDejeuner.calories}
       />
       <MealCard
         emoji={dayData.dejeuner.emoji}
-        label="Déjeuner"
+        label={t.consumer.lunch}
         plat={dayData.dejeuner.plat}
         description={dayData.dejeuner.description}
         calories={dayData.dejeuner.calories}
       />
       <MealCard
         emoji={dayData.diner.emoji}
-        label="Dîner"
+        label={t.consumer.dinner}
         plat={dayData.diner.plat}
         description={dayData.diner.description}
         calories={dayData.diner.calories}
       />
       <MealCard
         emoji={dayData.collation.emoji}
-        label="Collation"
+        label={t.consumer.snack}
         plat={dayData.collation.plat}
         description={dayData.collation.description}
         calories={dayData.collation.calories}
@@ -203,9 +221,24 @@ export default function HomeScreen() {
   );
 
   const typeConfig = {
-    vente: { emoji: "🛒", label: "Point de vente", color: "#16a34a", bg: "#f0fdf4" },
-    cultivation: { emoji: "🌾", label: "Cultivation", color: "#ca8a04", bg: "#fefce8" },
-    elevage: { emoji: "🐄", label: "Élevage", color: "#dc2626", bg: "#fef2f2" },
+    vente: {
+      emoji: "🛒",
+      label: t.consumer.salePoint,
+      color: "#16a34a",
+      bg: "#f0fdf4",
+    },
+    cultivation: {
+      emoji: "🌾",
+      label: t.consumer.cultivation,
+      color: "#ca8a04",
+      bg: "#fefce8",
+    },
+    elevage: {
+      emoji: "🐄",
+      label: t.consumer.livestock,
+      color: "#dc2626",
+      bg: "#fef2f2",
+    },
   };
 
   return (
@@ -218,7 +251,10 @@ export default function HomeScreen() {
         <View style={styles.headerContent}>
           <View style={{ flex: 1 }}>
             <Text style={styles.hello}>
-              {t.consumer.hello}, {userData?.nom?.split(" ")[1] || userData?.nom?.split(" ")[0] || ""}
+              {t.consumer.hello},{" "}
+              {userData?.nom?.split(" ")[1] ||
+                userData?.nom?.split(" ")[0] ||
+                ""}
             </Text>
             <Text style={styles.subtitle}>{t.consumer.subtitle}</Text>
           </View>
@@ -226,11 +262,24 @@ export default function HomeScreen() {
             style={styles.avatarBtn}
             onPress={() => router.push("/(consumer)/profile")}
           >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {(userData?.nom?.split(" ")[1] || userData?.nom?.split(" ")[0] || "U").charAt(0).toUpperCase()}
-              </Text>
-            </View>
+{avatar ? (
+  <Image
+    source={{ uri: `data:image/jpeg;base64,${avatar}` }}
+    style={styles.avatarImage}
+  />
+) : (
+  <View style={styles.avatar}>
+    <Text style={styles.avatarText}>
+      {(
+        userData?.nom?.split(" ")[1] ||
+        userData?.nom?.split(" ")[0] ||
+        "U"
+      )
+        .charAt(0)
+        .toUpperCase()}
+    </Text>
+  </View>
+)}
           </TouchableOpacity>
         </View>
       </View>
@@ -240,7 +289,11 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#16a34a"
+          />
         }
       >
         {/* Bannière profil incomplet */}
@@ -251,8 +304,12 @@ export default function HomeScreen() {
           >
             <Text style={styles.profileBannerEmoji}>🏥</Text>
             <View style={styles.profileBannerText}>
-              <Text style={styles.profileBannerTitle}>{t.consumer.completeProfile}</Text>
-              <Text style={styles.profileBannerSub}>{t.consumer.completeProfileSub}</Text>
+              <Text style={styles.profileBannerTitle}>
+                {t.consumer.completeProfile}
+              </Text>
+              <Text style={styles.profileBannerSub}>
+                {t.consumer.completeProfileSub}
+              </Text>
             </View>
             <Text style={styles.profileBannerArrow}>›</Text>
           </TouchableOpacity>
@@ -266,16 +323,20 @@ export default function HomeScreen() {
               style={styles.actionCard}
               onPress={() => router.push("/(consumer)/feed")}
             >
-              <View style={[styles.actionIconBox, { backgroundColor: "#f5f3ff" }]}>
+              <View
+                style={[styles.actionIconBox, { backgroundColor: "#f5f3ff" }]}
+              >
                 <Text style={styles.actionEmoji}>📢</Text>
               </View>
-              <Text style={styles.actionText}>Actualités</Text>
+              <Text style={styles.actionText}>{t.consumer.news}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push("/(consumer)/chat")}
             >
-              <View style={[styles.actionIconBox, { backgroundColor: "#eff6ff" }]}>
+              <View
+                style={[styles.actionIconBox, { backgroundColor: "#eff6ff" }]}
+              >
                 <Text style={styles.actionEmoji}>🤖</Text>
               </View>
               <Text style={styles.actionText}>{t.consumer.chat}</Text>
@@ -284,7 +345,9 @@ export default function HomeScreen() {
               style={styles.actionCard}
               onPress={() => router.push("/(consumer)/map")}
             >
-              <View style={[styles.actionIconBox, { backgroundColor: "#f0fdf4" }]}>
+              <View
+                style={[styles.actionIconBox, { backgroundColor: "#f0fdf4" }]}
+              >
                 <Text style={styles.actionEmoji}>🗺️</Text>
               </View>
               <Text style={styles.actionText}>{t.consumer.map}</Text>
@@ -293,7 +356,9 @@ export default function HomeScreen() {
               style={styles.actionCard}
               onPress={() => router.push("/(consumer)/profile")}
             >
-              <View style={[styles.actionIconBox, { backgroundColor: "#fef3c7" }]}>
+              <View
+                style={[styles.actionIconBox, { backgroundColor: "#fef3c7" }]}
+              >
                 <Text style={styles.actionEmoji}>👤</Text>
               </View>
               <Text style={styles.actionText}>{t.consumer.profile}</Text>
@@ -305,9 +370,9 @@ export default function HomeScreen() {
         {pointsProches.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>📍 Près de vous</Text>
+              <Text style={styles.sectionTitle}>📍 {t.consumer.nearYou}</Text>
               <TouchableOpacity onPress={() => router.push("/(consumer)/map")}>
-                <Text style={styles.weekLink}>Voir la carte</Text>
+                <Text style={styles.weekLink}>{t.consumer.viewMap}</Text>
               </TouchableOpacity>
             </View>
 
@@ -322,24 +387,45 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     key={point.id}
                     style={styles.posCard}
-                    onPress={() => router.push(`/(consumer)/agriculteur/${point.agriculteurId}`)}
+                    onPress={() =>
+                      router.push(
+                        `/(consumer)/agriculteur/${point.agriculteurId}`
+                      )
+                    }
                     activeOpacity={0.85}
                   >
-                    <View style={[styles.posTypeBadge, { backgroundColor: config.bg }]}>
+                    <View
+                      style={[
+                        styles.posTypeBadge,
+                        { backgroundColor: config.bg },
+                      ]}
+                    >
                       <Text style={styles.posTypeEmoji}>{config.emoji}</Text>
-                      <Text style={[styles.posTypeText, { color: config.color }]}>{config.label}</Text>
+                      <Text
+                        style={[styles.posTypeText, { color: config.color }]}
+                      >
+                        {config.label}
+                      </Text>
                     </View>
 
-                    <Text style={styles.posName} numberOfLines={1}>{point.nom}</Text>
+                    <Text style={styles.posName} numberOfLines={1}>
+                      {point.nom}
+                    </Text>
                     <Text style={styles.posFarmer} numberOfLines={1}>
-                      👤 {point.agriculteurNom || "Agriculteur"}
+                      👤 {point.agriculteurNom || t.consumer.farmer}
                     </Text>
 
                     {point.distance != null && (
                       <Text style={styles.posDistance}>
-                        📍 À {point.distance < 1
-                          ? `${Math.round(point.distance * 1000)} m`
-                          : `${point.distance.toFixed(1)} km`} de vous
+                        📍 {t.consumer.at}{" "}
+                        {point.distance < 1
+                          ? `${Math.round(point.distance * 1000)} ${
+                              t.consumer.meter
+                            }`
+                          : `${point.distance.toFixed(1)} ${
+                              t.consumer.kilometer
+                            }`}{" "}
+                        {t.consumer.fromYou}
                       </Text>
                     )}
 
@@ -347,7 +433,9 @@ export default function HomeScreen() {
                       <View style={styles.posProduits}>
                         {point.produits.map((prod, i) => (
                           <View key={i} style={styles.posProduitChip}>
-                            <Text style={styles.posProduitText}>{prod.nom}</Text>
+                            <Text style={styles.posProduitText}>
+                              {prod.nom}
+                            </Text>
                           </View>
                         ))}
                       </View>
@@ -363,26 +451,33 @@ export default function HomeScreen() {
         {generatingMenu ? (
           <View style={styles.generatingBox}>
             <ActivityIndicator color="#16a34a" />
-            <Text style={styles.generatingText}>Génération de votre menu personnalisé...</Text>
+            <Text style={styles.generatingText}>
+              {t.consumer.generatingPersonalizedMenu}
+            </Text>
           </View>
         ) : todayMenu ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Menu du jour</Text>
+              <Text style={styles.sectionTitle}>{t.consumer.todayMenu}</Text>
               <TouchableOpacity onPress={() => setShowWeek(!showWeek)}>
                 <Text style={styles.weekLink}>
-                  {showWeek ? "Voir moins" : "Voir la semaine"}
+                  {showWeek ? t.consumer.showLess : t.consumer.showWeek}
                 </Text>
               </TouchableOpacity>
             </View>
 
             <DayCard dayData={todayMenu} isToday={true} />
 
-            {showWeek && menu?.semaine
-              ?.filter((d) => d.jour !== todayMenu.jour)
-              .map((dayData) => (
-                <DayCard key={dayData.jour} dayData={dayData} isToday={false} />
-              ))}
+            {showWeek &&
+              menu?.semaine
+                ?.filter((d) => d.jour !== todayMenu.jour)
+                .map((dayData) => (
+                  <DayCard
+                    key={dayData.jour}
+                    dayData={dayData}
+                    isToday={false}
+                  />
+                ))}
           </View>
         ) : null}
       </ScrollView>
@@ -547,6 +642,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
+  avatarImage: {
+  width: 42,
+  height: 42,
+  borderRadius: 21,
+},
   actionEmoji: {
     fontSize: 24,
   },
@@ -693,7 +793,12 @@ const styles = StyleSheet.create({
   posTypeText: { fontSize: 11, fontWeight: "600" },
   posName: { fontSize: 15, fontWeight: "700", color: "#111827" },
   posFarmer: { fontSize: 12, color: "#6b7280", marginTop: 3 },
-  posDistance: { fontSize: 12, color: "#16a34a", fontWeight: "600", marginTop: 6 },
+  posDistance: {
+    fontSize: 12,
+    color: "#16a34a",
+    fontWeight: "600",
+    marginTop: 6,
+  },
   posProduits: {
     flexDirection: "row",
     flexWrap: "wrap",

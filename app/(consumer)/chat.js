@@ -1,36 +1,37 @@
-import { useState, useRef, useEffect } from "react";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
 import {
-  View,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
+  View,
 } from "react-native";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  serverTimestamp,
-  doc,
-  getDoc,
-  deleteDoc,
-  query,
-  orderBy,
-  limit,
-} from "firebase/firestore";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { db } from "../../src/lib/firebase";
-import { sendMessageToGemini } from "../../src/lib/gemini";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
-import { useRouter } from "expo-router";
-import * as Location from "expo-location";
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { db } from "../../src/lib/firebase";
+import { sendMessageToGemini } from "../../src/lib/gemini";
 
 export default function ChatScreen() {
   const { user } = useAuth();
@@ -63,7 +64,7 @@ export default function ChatScreen() {
           const parsed = JSON.parse(cached);
           if (parsed.length > 0) {
             setMessages([welcomeMsg, ...parsed]);
-            setLoadingHistory(false); // on a déjà du contenu à montrer
+            setLoadingHistory(false);
           }
         }
       } catch (e) {
@@ -78,13 +79,11 @@ export default function ChatScreen() {
     const fetchInitialData = async () => {
       if (!user) return;
       try {
-        // Profil santé
         const healthSnap = await getDoc(
           doc(db, "users", user.uid, "profilSante", "data")
         );
         if (healthSnap.exists()) setHealthProfile(healthSnap.data());
 
-        // Historique Firestore
         const historySnap = await getDocs(
           query(
             collection(db, "users", user.uid, "conversations"),
@@ -110,7 +109,6 @@ export default function ChatScreen() {
             });
 
           setMessages([welcomeMsg, ...history]);
-          // Mettre à jour le cache
           if (cacheKey) {
             await AsyncStorage.setItem(cacheKey, JSON.stringify(history));
           }
@@ -122,8 +120,6 @@ export default function ChatScreen() {
       }
     };
     fetchInitialData();
-
-    // Producteurs en arrière-plan (ne bloque pas l'affichage)
     fetchNearbyProducers();
   }, [user]);
 
@@ -155,43 +151,85 @@ export default function ChatScreen() {
         coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
       }
 
-      const snap = await getDocs(collection(db, "pointsDeVente"));
-      const points = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Producteurs actifs uniquement (on écarte les suspendus)
+      const usersSnap = await getDocs(
+        query(collection(db, "users"), where("role", "==", "agriculteur"))
+      );
 
-      const enriched = await Promise.all(
-        points.map(async (point) => {
-          let produits = [];
-          if (point.agriculteurId) {
-            try {
-              const prodSnap = await getDocs(
-                collection(db, "agriculteurs", point.agriculteurId, "produits")
-              );
-              produits = prodSnap.docs
-                .map((p) => p.data())
-                .filter((p) => p.disponible !== false)
-                .map((p) => p.nom);
-            } catch (e) {}
-          }
+      const actifs = new Map();
+      usersSnap.docs.forEach((d) => {
+        const data = d.data();
+        if (data.farmerStatus !== "suspended") {
+          actifs.set(d.id, data.nom || "Producteur");
+        }
+      });
+      if (actifs.size === 0) return setNearbyProducers([]);
 
-          let distance = null;
-          if (coords && point.latitude && point.longitude) {
-            distance = getDistance(coords.lat, coords.lng, point.latitude, point.longitude);
-          }
+      // Annonces réellement en cours, groupées par producteur
+      const pubSnap = await getDocs(
+        query(collection(db, "publications"), where("statut", "==", "approuve"))
+      );
 
-          return {
-            agriculteurId: point.agriculteurId || null,
-            nom: point.nom,
-            agriculteurNom: point.agriculteurNom,
-            adresse: point.adresse,
-            type: point.type,
-            produits,
+      const annoncesPar = {};
+      pubSnap.docs.forEach((d) => {
+        const p = d.data();
+        if (!p.agriculteurId || !actifs.has(p.agriculteurId)) return;
+        if (!annoncesPar[p.agriculteurId]) annoncesPar[p.agriculteurId] = [];
+        annoncesPar[p.agriculteurId].push(
+          p.produit || p.contenu?.slice(0, 40) || ""
+        );
+      });
+
+      // Points de vente regroupés par producteur (évite les doublons)
+      const pdvSnap = await getDocs(collection(db, "pointsDeVente"));
+
+      const parProducteur = {};
+      pdvSnap.docs.forEach((d) => {
+        const point = d.data();
+        const aid = point.agriculteurId;
+        if (!aid || !actifs.has(aid)) return;
+
+        let distance = null;
+        if (coords && point.latitude && point.longitude) {
+          distance = getDistance(coords.lat, coords.lng, point.latitude, point.longitude);
+        }
+
+        if (!parProducteur[aid]) {
+          parProducteur[aid] = {
+            agriculteurId: aid,
+            agriculteurNom: point.agriculteurNom || actifs.get(aid),
+            lieux: [],
+            produits: [],
+            annonces: annoncesPar[aid] || [],
             distance,
           };
+        }
+        const entry = parProducteur[aid];
+        if (point.nom) entry.lieux.push(point.nom);
+        if (distance != null && (entry.distance == null || distance < entry.distance)) {
+          entry.distance = distance;
+        }
+      });
+
+      // Catalogue de chaque producteur retenu
+      await Promise.all(
+        Object.values(parProducteur).map(async (entry) => {
+          try {
+            const prodSnap = await getDocs(
+              collection(db, "agriculteurs", entry.agriculteurId, "produits")
+            );
+            entry.produits = prodSnap.docs
+              .map((p) => p.data())
+              .filter((p) => p.disponible !== false)
+              .map((p) => p.nom);
+          } catch (e) {
+            // Catalogue inaccessible pour ce producteur, on ignore silencieusement
+          }
         })
       );
 
-      const withProducts = enriched
-        .filter((p) => p.produits.length > 0)
+      const result = Object.values(parProducteur)
+        .filter((p) => p.produits.length > 0 || p.annonces.length > 0)
         .sort((a, b) => {
           if (a.distance == null) return 1;
           if (b.distance == null) return -1;
@@ -199,9 +237,10 @@ export default function ChatScreen() {
         })
         .slice(0, 5);
 
-      setNearbyProducers(withProducts);
+      setNearbyProducers(result);
     } catch (e) {
-      console.error("Erreur producteurs proches:", e);
+      console.error("[Vita] ERREUR producteurs proches:", e.code || "", e.message);
+      setNearbyProducers([]);
     }
   };
 
@@ -249,19 +288,24 @@ Garde ça en tête dans tes conseils, mais parle-en avec tact, comme un ami atte
     }
 
     if (nearbyProducers.length > 0) {
-      prompt += `\n\nPRODUCTEURS ET POINTS DE VENTE PRÈS DE TON AMI (utilise-les avec discernement) :`;
+      prompt += `\n\nPRODUCTEURS ACTIFS PRÈS DE TON AMI :`;
       nearbyProducers.forEach((p) => {
         const dist = p.distance != null
           ? (p.distance < 1 ? `${Math.round(p.distance * 1000)} m` : `${p.distance.toFixed(1)} km`)
           : "distance inconnue";
-        prompt += `\n- ${p.nom} (${p.agriculteurNom || "producteur local"}), à ${dist}, propose : ${p.produits.join(", ")}`;
+        prompt += `\n- ${p.agriculteurNom} (${p.lieux.join(", ") || "lieu non précisé"}), à ${dist}`;
+        if (p.produits.length > 0) prompt += `\n  cultive : ${p.produits.join(", ")}`;
+        if (p.annonces.length > 0) prompt += `\n  vend actuellement : ${p.annonces.join(", ")}`;
       });
-      prompt += `\n\nQuand tu recommandes un aliment qui convient à son profil santé ET qu'un de ces producteurs le propose, mentionne-le naturellement en citant son nom EXACT tel qu'il apparaît ci-dessus. Mais ne recommande QUE ce qui est bon pour sa santé. Reste naturel, ne récite pas la liste.
+      prompt += `\n\nRÈGLES STRICTES SUR LES PRODUCTEURS :
+- Ne cite un producteur QUE s'il propose vraiment ce dont ton ami parle. Si aucun ne correspond, dis-le simplement et n'en cite aucun.
+- Ne cite jamais plus d'un ou deux producteurs dans une réponse, et jamais deux fois le même.
+- Distingue bien « cultive » (son activité habituelle) et « vend actuellement » (ses annonces du moment).
+- Cite son nom EXACTEMENT tel qu'écrit ci-dessus.
+- N'invente jamais de numéro, d'adresse ni de disponibilité.
 
-SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
-- N'invente jamais de numéro ni d'adresse
-- Cite le nom exact du producteur et indique simplement que sa fiche complète, avec ses coordonnées et son catalogue, s'ouvre juste en dessous de ton message
-- Reste bref et chaleureux, une ou deux phrases suffisent`;
+SI ON TE DEMANDE LE CONTACT D'UN PRODUCTEUR :
+Cite son nom exact et indique que sa fiche complète s'ouvre juste en dessous de ton message. Une ou deux phrases suffisent.`;
     }
 
     return prompt;
@@ -274,13 +318,10 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
     const found = [];
     nearbyProducers.forEach((p) => {
       if (!p.agriculteurId) return;
-      const names = [p.agriculteurNom, p.nom].filter(Boolean);
+      const names = [p.agriculteurNom, ...(p.lieux || [])].filter(Boolean);
       const mentioned = names.some((n) => lower.includes(n.toLowerCase()));
       if (mentioned && !found.some((f) => f.agriculteurId === p.agriculteurId)) {
-        found.push({
-          agriculteurId: p.agriculteurId,
-          label: p.agriculteurNom || p.nom,
-        });
+        found.push({ agriculteurId: p.agriculteurId, label: p.agriculteurNom });
       }
     });
     return found;
@@ -302,10 +343,8 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
         buildSystemPrompt()
       );
 
-      // Producteurs cités dans la réponse
       const linkedFarmers = detectMentionedFarmers(responseText);
 
-      // Sauvegarder dans Firestore et récupérer l'ID
       const docRef = await addDoc(collection(db, "users", user.uid, "conversations"), {
         userMessage: textToSend,
         assistantMessage: responseText,
@@ -313,7 +352,6 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
         sentAt: serverTimestamp(),
       });
 
-      // Attacher l'exchangeId aux deux messages
       const finalMessages = [
         ...messages,
         { role: "user", content: textToSend, exchangeId: docRef.id },
@@ -326,7 +364,6 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
       ];
       setMessages(finalMessages);
 
-      // Mettre à jour le cache (sans le message de bienvenue)
       if (cacheKey) {
         const toCache = finalMessages.filter((m) => m.exchangeId !== null);
         await AsyncStorage.setItem(cacheKey, JSON.stringify(toCache));
@@ -342,14 +379,12 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
     }
   };
 
-  // Appui long → activer le mode sélection
   const handleLongPress = (exchangeId) => {
-    if (!exchangeId) return; // pas de sélection sur le message de bienvenue
+    if (!exchangeId) return;
     setSelectionMode(true);
     setSelectedIds([exchangeId]);
   };
 
-  // Toggle sélection d'un échange
   const toggleSelect = (exchangeId) => {
     if (!exchangeId) return;
     setSelectedIds((prev) =>
@@ -364,7 +399,6 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
     setSelectedIds([]);
   };
 
-  // Supprimer les échanges sélectionnés
   const deleteSelected = async () => {
     if (selectedIds.length === 0) return;
     Alert.alert(
@@ -377,20 +411,17 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
           style: "destructive",
           onPress: async () => {
             try {
-              // Supprimer de Firestore
               await Promise.all(
                 selectedIds.map((id) =>
                   deleteDoc(doc(db, "users", user.uid, "conversations", id))
                 )
               );
 
-              // Retirer de l'affichage
               const remaining = messages.filter(
                 (m) => m.exchangeId === null || !selectedIds.includes(m.exchangeId)
               );
               setMessages(remaining);
 
-              // Mettre à jour le cache
               if (cacheKey) {
                 const toCache = remaining.filter((m) => m.exchangeId !== null);
                 await AsyncStorage.setItem(cacheKey, JSON.stringify(toCache));
@@ -407,7 +438,6 @@ SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
     );
   };
 
-  // Tout effacer
   const clearAll = () => {
     Alert.alert(
       "Tout effacer",
@@ -689,11 +719,8 @@ const styles = StyleSheet.create({
   messageRowUser: { justifyContent: "flex-end" },
   messageRowAssistant: { justifyContent: "flex-start" },
   messageRowSelected: {
-    backgroundColor: "#dcfce7",
-    borderRadius: 12,
-    marginHorizontal: -6,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    backgroundColor: "#dcfce7", borderRadius: 12,
+    marginHorizontal: -6, paddingHorizontal: 6, paddingVertical: 4,
   },
   botAvatar: {
     width: 32, height: 32, borderRadius: 16, backgroundColor: "#dcfce7",
@@ -711,24 +738,15 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 14, lineHeight: 21 },
   bubbleTextUser: { color: "#fff" },
   bubbleTextAssistant: { color: "#1f2937" },
-
-  // Liens vers les fiches producteurs
   farmerLinks: { marginTop: 8, gap: 6 },
   farmerLinkBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#f0fdf4",
-    borderWidth: 1,
-    borderColor: "#bbf7d0",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#f0fdf4", borderWidth: 1, borderColor: "#bbf7d0",
+    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
   },
   farmerLinkIcon: { fontSize: 14 },
   farmerLinkText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#15803d" },
   farmerLinkArrow: { fontSize: 18, color: "#16a34a", lineHeight: 20 },
-
   typingBubble: { flexDirection: "row", alignItems: "center", gap: 8 },
   typingText: { fontSize: 13, color: "#6b7280" },
   checkCircle: {

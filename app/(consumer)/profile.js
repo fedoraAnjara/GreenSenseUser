@@ -8,16 +8,27 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  Switch,
+  Image,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import {
   doc,
   getDoc,
+  updateDoc,
   deleteDoc,
   collection,
   getDocs,
 } from "firebase/firestore";
-import { deleteUser } from "firebase/auth";
+import {
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+  verifyBeforeUpdateEmail,
+} from "firebase/auth";
+import * as ImagePicker from "expo-image-picker";
 import { db, auth } from "../../src/lib/firebase";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
@@ -34,26 +45,222 @@ export default function ProfileScreen() {
 
   const [healthProfile, setHealthProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [notifEnabled, setNotifEnabled] = useState(true);
   const [activeModal, setActiveModal] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Avatar
+  const [avatar, setAvatar] = useState(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Sécurité (mot de passe / email)
+  const [securityModal, setSecurityModal] = useState(null); // "password" | "email"
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => {
-    const fetchHealthProfile = async () => {
+    const fetchData = async () => {
       if (!user) return;
       try {
         const snap = await getDoc(
           doc(db, "users", user.uid, "profilSante", "data")
         );
         if (snap.exists()) setHealthProfile(snap.data());
+
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        if (userSnap.exists() && userSnap.data().photoBase64) {
+          setAvatar(userSnap.data().photoBase64);
+        }
       } catch (e) {
         console.error(e);
       } finally {
         setLoading(false);
       }
     };
-    fetchHealthProfile();
+    fetchData();
   }, [user]);
+
+  // --- AVATAR ---
+  const pickAvatar = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          "Autorisation requise",
+          "GreenSense a besoin d'accéder à vos photos pour changer votre avatar."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.3,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.base64) return;
+
+      const base64 = result.assets[0].base64;
+
+      // Sécurité : un document Firestore est limité à 1 Mo
+      if (base64.length > 700000) {
+        Alert.alert(
+          "Image trop lourde",
+          "Choisissez une image plus petite ou recadrez-la davantage."
+        );
+        return;
+      }
+
+      setUploadingAvatar(true);
+      await updateDoc(doc(db, "users", user.uid), { photoBase64: base64 });
+      setAvatar(base64);
+    } catch (e) {
+      console.error("Erreur avatar:", e);
+      Alert.alert("Erreur", "Impossible de mettre à jour votre photo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    Alert.alert("Photo de profil", "Retirer votre photo actuelle ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Retirer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setUploadingAvatar(true);
+            await updateDoc(doc(db, "users", user.uid), { photoBase64: null });
+            setAvatar(null);
+          } catch (e) {
+            Alert.alert("Erreur", "Impossible de retirer la photo.");
+          } finally {
+            setUploadingAvatar(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleAvatarPress = () => {
+    if (uploadingAvatar) return;
+    if (avatar) {
+      Alert.alert("Photo de profil", "Que souhaitez-vous faire ?", [
+        { text: "Annuler", style: "cancel" },
+        { text: "Changer la photo", onPress: pickAvatar },
+        {
+          text: "Retirer la photo",
+          style: "destructive",
+          onPress: removeAvatar,
+        },
+      ]);
+    } else {
+      pickAvatar();
+    }
+  };
+
+  // --- SÉCURITÉ ---
+  const openSecurity = (type) => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setNewEmail("");
+    setFormError("");
+    setSecurityModal(type);
+  };
+
+  const closeSecurity = () => {
+    if (saving) return;
+    setSecurityModal(null);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      setFormError("Remplissez les deux champs");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setFormError(
+        "Le nouveau mot de passe doit contenir au moins 6 caractères"
+      );
+      return;
+    }
+    setFormError("");
+    setSaving(true);
+    try {
+      const credential = EmailAuthProvider.credential(
+        user.email,
+        currentPassword
+      );
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, newPassword);
+      setSecurityModal(null);
+      Alert.alert(
+        "Mot de passe modifié",
+        "Votre nouveau mot de passe est actif."
+      );
+    } catch (e) {
+      if (
+        e.code === "auth/wrong-password" ||
+        e.code === "auth/invalid-credential"
+      ) {
+        setFormError("Mot de passe actuel incorrect");
+      } else if (e.code === "auth/too-many-requests") {
+        setFormError("Trop de tentatives, réessayez plus tard");
+      } else {
+        setFormError("Une erreur est survenue");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChangeEmail = async () => {
+    const email = newEmail.trim();
+    if (!currentPassword || !email) {
+      setFormError("Remplissez les deux champs");
+      return;
+    }
+    if (!email.includes("@")) {
+      setFormError("Adresse email invalide");
+      return;
+    }
+    setFormError("");
+    setSaving(true);
+    try {
+      const credential = EmailAuthProvider.credential(
+        user.email,
+        currentPassword
+      );
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      // Firebase envoie un lien de confirmation : l'email ne change qu'après validation
+      await verifyBeforeUpdateEmail(auth.currentUser, email);
+      setSecurityModal(null);
+      Alert.alert(
+        "Vérification envoyée",
+        `Un lien de confirmation a été envoyé à ${email}. Votre adresse sera modifiée une fois le lien ouvert. Vous devrez ensuite vous reconnecter avec la nouvelle adresse.`
+      );
+    } catch (e) {
+      if (
+        e.code === "auth/wrong-password" ||
+        e.code === "auth/invalid-credential"
+      ) {
+        setFormError("Mot de passe actuel incorrect");
+      } else if (e.code === "auth/email-already-in-use") {
+        setFormError("Cette adresse est déjà utilisée");
+      } else if (e.code === "auth/invalid-email") {
+        setFormError("Adresse email invalide");
+      } else {
+        setFormError("Une erreur est survenue");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(t.profile.logout, t.profile.logoutConfirm, [
@@ -81,21 +288,17 @@ export default function ProfileScreen() {
     if (!user) return;
     setDeleting(true);
     try {
-      // 1. Supprimer les conversations (sous-collection)
       const convSnap = await getDocs(
         collection(db, "users", user.uid, "conversations")
       );
       await Promise.all(convSnap.docs.map((d) => deleteDoc(d.ref)));
 
-      // 2. Supprimer le profil santé
-      await deleteDoc(
-        doc(db, "users", user.uid, "profilSante", "data")
-      ).catch(() => {});
+      await deleteDoc(doc(db, "users", user.uid, "profilSante", "data")).catch(
+        () => {}
+      );
 
-      // 3. Supprimer le document utilisateur
       await deleteDoc(doc(db, "users", user.uid));
 
-      // 4. Supprimer le compte Auth
       await deleteUser(auth.currentUser);
 
       router.replace("/(auth)/login");
@@ -184,7 +387,7 @@ Ces conditions peuvent être modifiées à tout moment. Les utilisateurs seront 
 Votre vie privée est essentielle pour nous. Cette politique explique quelles données nous collectons, pourquoi, et comment elles sont protégées.
 
 1. DONNÉES QUE NOUS COLLECTONS
-Données de compte : nom et adresse email.
+Données de compte : nom, adresse email et photo de profil si vous en ajoutez une.
 Profil de santé : poids, taille, IMC, pathologies, objectifs nutritionnels et allergies que vous renseignez volontairement.
 Données de localisation : votre position approximative, uniquement lorsque vous utilisez la carte ou le fil des producteurs proches.
 Données d'usage : vos échanges avec l'assistant Vita, afin d'améliorer la pertinence des réponses.
@@ -238,6 +441,12 @@ Développé avec passion à Madagascar. 🇲🇬`,
 
 COMMENT COMPLÉTER MON PROFIL DE SANTÉ ?
 Rendez-vous dans votre profil, section « Informations de santé », puis appuyez sur « Modifier ». Renseignez votre poids, votre taille et, si vous le souhaitez, vos pathologies, objectifs et allergies. Plus votre profil est complet, plus les recommandations sont précises.
+
+COMMENT CHANGER MA PHOTO DE PROFIL ?
+Appuyez simplement sur votre avatar en haut de l'écran profil, puis choisissez une image dans votre galerie. Vous pouvez la recadrer avant de valider.
+
+COMMENT MODIFIER MON MOT DE PASSE ?
+Dans la section « Compte et sécurité », appuyez sur « Mot de passe ». Saisissez votre mot de passe actuel puis le nouveau.
 
 COMMENT FONCTIONNE L'ASSISTANT VITA ?
 Vita est votre assistant nutritionnel intelligent. Il connaît votre profil de santé et les producteurs proches de vous. Posez-lui vos questions sur l'alimentation, demandez-lui un menu ou des idées de repas adaptés à vos besoins.
@@ -321,7 +530,7 @@ These terms may be modified at any time. Users will be informed of any substanti
 Your privacy is essential to us. This policy explains what data we collect, why, and how it is protected.
 
 1. DATA WE COLLECT
-Account data: name and email address.
+Account data: name, email address, and profile picture if you add one.
 Health profile: weight, height, BMI, conditions, nutritional goals, and allergies that you voluntarily provide.
 Location data: your approximate position, only when you use the map or the nearby producers feed.
 Usage data: your conversations with the Vita assistant, to improve the relevance of responses.
@@ -375,6 +584,12 @@ Made with passion in Madagascar. 🇲🇬`,
 
 HOW DO I COMPLETE MY HEALTH PROFILE?
 Go to your profile, "Health information" section, then tap "Edit." Enter your weight, height and, if you wish, your conditions, goals, and allergies. The more complete your profile, the more accurate the recommendations.
+
+HOW DO I CHANGE MY PROFILE PICTURE?
+Simply tap your avatar at the top of the profile screen, then choose an image from your gallery. You can crop it before confirming.
+
+HOW DO I CHANGE MY PASSWORD?
+In the "Account and security" section, tap "Password." Enter your current password, then the new one.
 
 HOW DOES THE VITA ASSISTANT WORK?
 Vita is your intelligent nutrition assistant. It knows your health profile and the producers near you. Ask it questions about food, request a menu, or get meal ideas tailored to your needs.
@@ -455,15 +670,33 @@ Our team is here for you: support@greensense.mg`,
       >
         {/* Avatar avec anneau vert */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {userData?.nom?.charAt(0).toUpperCase() || "U"}
-              </Text>
+          <TouchableOpacity
+            onPress={handleAvatarPress}
+            activeOpacity={0.8}
+            style={styles.avatarRing}
+          >
+            {uploadingAvatar ? (
+              <View style={styles.avatar}>
+                <ActivityIndicator color="#16a34a" />
+              </View>
+            ) : avatar ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${avatar}` }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {userData?.nom?.charAt(0).toUpperCase() || "U"}
+                </Text>
+              </View>
+            )}
+            <View style={styles.avatarBadge}>
+              <Feather name="camera" size={13} color="#fff" />
             </View>
-          </View>
+          </TouchableOpacity>
           <Text style={styles.userName}>{userData?.nom}</Text>
-          <Text style={styles.userEmail}>{userData?.email}</Text>
+          <Text style={styles.userEmail}>{user?.email || userData?.email}</Text>
         </View>
 
         {/* Profil de santé */}
@@ -537,6 +770,30 @@ Our team is here for you: support@greensense.mg`,
               </View>
             </View>
           )}
+        </View>
+
+        {/* Compte et sécurité */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t.profile.accountSecurity}</Text>
+          <View style={styles.card}>
+            <SettingRow
+              icon={<Feather name="image" size={22} color="black" />}
+              label={t.profile.profilePhoto}
+              value={avatar ? t.profile.edit : t.profile.add}
+              onPress={handleAvatarPress}
+            />
+            <SettingRow
+              icon={<Feather name="lock" size={22} color="black" />}
+              label={t.profile.password}
+              onPress={() => openSecurity("password")}
+            />
+            <SettingRow
+              icon={<Feather name="mail" size={22} color="black" />}
+              label={t.profile.emailAddress}
+              onPress={() => openSecurity("email")}
+              isLast
+            />
+          </View>
         </View>
 
         {/* Préférences */}
@@ -621,8 +878,12 @@ Our team is here for you: support@greensense.mg`,
             <ActivityIndicator color="#dc2626" />
           ) : (
             <Text style={styles.deleteText}>
-              <FontAwesome5 name="trash-alt" size={15} color="rgba(194, 16, 16, 0.62)" />{" "}
-              Supprimer mon compte
+              <FontAwesome5
+                name="trash-alt"
+                size={15}
+                color="rgba(194, 16, 16, 0.62)"
+              />{" "}
+              {t.profile.deleteAccount}
             </Text>
           )}
         </TouchableOpacity>
@@ -658,15 +919,123 @@ Our team is here for you: support@greensense.mg`,
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Modale sécurité (mot de passe / email) */}
+      <Modal
+        visible={securityModal !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={closeSecurity}
+      >
+        <KeyboardAvoidingView
+          style={styles.secOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={closeSecurity}
+          />
+          <View style={styles.secCard}>
+            <Text style={styles.secTitle}>
+              {securityModal === "password"
+                ? t.profile.changePassword
+                : t.profile.changeEmail}
+            </Text>
+
+            <Text style={styles.secSubtitle}>
+              {securityModal === "password"
+                ? t.profile.passwordSubtitle
+                : t.profile.emailSubtitle}
+            </Text>
+
+            <Text style={styles.secLabel}>{t.profile.currentPassword}</Text>
+            <TextInput
+              style={styles.secInput}
+              value={currentPassword}
+              onChangeText={(v) => {
+                setCurrentPassword(v);
+                setFormError("");
+              }}
+              placeholder={t.profile.passwordPlaceholder}
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            {securityModal === "password" ? (
+              <>
+                <Text style={styles.secLabel}>{t.profile.newPassword}</Text>
+                <TextInput
+                  style={styles.secInput}
+                  value={newPassword}
+                  onChangeText={(v) => {
+                    setNewPassword(v);
+                    setFormError("");
+                  }}
+                  placeholder={t.profile.newPasswordPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.secLabel}>{t.profile.newEmail}</Text>
+                <TextInput
+                  style={styles.secInput}
+                  value={newEmail}
+                  onChangeText={(v) => {
+                    setNewEmail(v);
+                    setFormError("");
+                  }}
+                  placeholder={t.profile.newEmailPlaceholder}
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </>
+            )}
+
+            {formError ? (
+              <Text style={styles.secError}>{formError}</Text>
+            ) : null}
+
+            <View style={styles.secActions}>
+              <TouchableOpacity
+                style={styles.secCancelBtn}
+                onPress={closeSecurity}
+                disabled={saving}
+              >
+                <Text style={styles.secCancelText}>{t.profile.cancel}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secConfirmBtn, saving && { opacity: 0.6 }]}
+                onPress={
+                  securityModal === "password"
+                    ? handleChangePassword
+                    : handleChangeEmail
+                }
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.secConfirmText}>{t.profile.confirm}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f6f9f6",
-  },
+  container: { flex: 1, backgroundColor: "#f6f9f6" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -719,6 +1088,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarImage: { width: 78, height: 78, borderRadius: 39 },
+  avatarBadge: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#16a34a",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
   avatarText: { color: "#16a34a", fontSize: 32, fontWeight: "800" },
   userName: {
     fontSize: 20,
@@ -753,7 +1136,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // Settings rows
   settingRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -768,7 +1150,6 @@ const styles = StyleSheet.create({
   settingValue: { fontSize: 13, color: "#9ca3af" },
   settingArrow: { fontSize: 20, color: "#d1d5db", fontWeight: "600" },
 
-  // Health card
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -845,7 +1226,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#fecaca",
   },
-  deleteText: { fontSize: 14, fontWeight: "600", color: "rgba(194, 16, 16, 0.62)" },
+  deleteText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "rgba(194, 16, 16, 0.62)",
+  },
 
   version: {
     textAlign: "center",
@@ -854,7 +1239,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 
-  // Modal
+  // Modal légal
   modalContainer: { flex: 1, backgroundColor: "#fff" },
   modalHeader: {
     flexDirection: "row",
@@ -878,4 +1263,61 @@ const styles = StyleSheet.create({
   modalCloseText: { fontSize: 14, color: "#6b7280" },
   modalScroll: { padding: 20 },
   modalBody: { fontSize: 14, color: "#374151", lineHeight: 23 },
+
+  // Modal sécurité
+  secOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  secCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 22,
+  },
+  secTitle: { fontSize: 17, fontWeight: "700", color: "#111827" },
+  secSubtitle: {
+    fontSize: 13,
+    color: "#6b7280",
+    lineHeight: 19,
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  secLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  secInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+  },
+  secError: { fontSize: 12.5, color: "#dc2626", marginTop: 10 },
+  secActions: { flexDirection: "row", gap: 10, marginTop: 20 },
+  secCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    alignItems: "center",
+  },
+  secCancelText: { fontSize: 14, fontWeight: "600", color: "#6b7280" },
+  secConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#16a34a",
+    alignItems: "center",
+  },
+  secConfirmText: { fontSize: 14, fontWeight: "600", color: "#fff" },
 });
