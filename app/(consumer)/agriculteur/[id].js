@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import {
   doc,
@@ -41,6 +42,7 @@ export default function FarmerProfileScreen() {
   const router = useRouter();
 
   const [agriculteur, setAgriculteur] = useState(null);
+  const [compte, setCompte] = useState(null);
   const [pointDeVente, setPointDeVente] = useState(null);
   const [produits, setProduits] = useState([]);
   const [publications, setPublications] = useState([]);
@@ -50,11 +52,25 @@ export default function FarmerProfileScreen() {
     const fetchData = async () => {
       if (!id) return;
       try {
-        // 1. Infos agriculteur (collection agriculteurs publique)
+        // 1. Infos exploitation (collection agriculteurs publique)
         const agriSnap = await getDoc(doc(db, "agriculteurs", id));
         const agriData = agriSnap.exists() ? agriSnap.data() : {};
 
-        // 2. Point de vente lié (contient agriculteurNom)
+        // 2. Compte du producteur : requête filtrée sur les agriculteurs
+        //    (les règles autorisent la liste des comptes de rôle "agriculteur")
+        let compteData = null;
+        try {
+          const usersSnap = await getDocs(
+            query(collection(db, "users"), where("role", "==", "agriculteur"))
+          );
+          const match = usersSnap.docs.find((d) => d.id === id);
+          if (match) compteData = match.data();
+        } catch (e) {
+          console.log("Statut du producteur non disponible");
+        }
+        setCompte(compteData);
+
+        // 3. Point de vente lié
         const pdvSnap = await getDocs(
           query(collection(db, "pointsDeVente"), where("agriculteurId", "==", id))
         );
@@ -64,33 +80,39 @@ export default function FarmerProfileScreen() {
           setPointDeVente(pdvData);
         }
 
-        // Combiner : nom vient du point de vente, reste de agriculteurs
         setAgriculteur({
-          nom: pdvData?.agriculteurNom || agriData.nomFerme || "Agriculteur",
+          nom:
+            compteData?.nom ||
+            pdvData?.agriculteurNom ||
+            agriData.nomFerme ||
+            "Agriculteur",
           ...agriData,
         });
 
-        // 3. Catalogue produits (public)
+        // 4. Catalogue produits (public)
         const prodSnap = await getDocs(
           collection(db, "agriculteurs", id, "produits")
         );
         setProduits(prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        // 4. Publications approuvées (public)
+        // 5. Annonces : en cours et historique des ventes passées
         const pubSnap = await getDocs(
           query(
             collection(db, "publications"),
             where("agriculteurId", "==", id),
-            where("statut", "==", "approuve")
+            where("statut", "in", ["approuve", "perime"])
           )
         );
         const pubs = pubSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         pubs.sort((a, b) => {
+          const aPast = a.statut === "perime" ? 1 : 0;
+          const bPast = b.statut === "perime" ? 1 : 0;
+          if (aPast !== bPast) return aPast - bPast;
           const dateA = a.createdAt?.toDate?.() ?? new Date(0);
           const dateB = b.createdAt?.toDate?.() ?? new Date(0);
           return dateB - dateA;
         });
-        setPublications(pubs.slice(0, 5));
+        setPublications(pubs.slice(0, 8));
       } catch (e) {
         console.error(e);
       } finally {
@@ -125,6 +147,7 @@ export default function FarmerProfileScreen() {
 
   const nomComplet = agriculteur.nom || "Agriculteur";
   const nomFerme = agriculteur.nomFerme || pointDeVente?.nom || "Ferme";
+  const isSuspended = compte?.farmerStatus === "suspended";
 
   return (
     <View style={styles.container}>
@@ -143,22 +166,32 @@ export default function FarmerProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Carte identité */}
-        <View style={styles.identityCard}>
-          <View style={styles.avatar}>
+        <View style={[styles.identityCard, isSuspended && styles.identityCardMuted]}>
+          <View style={[styles.avatar, isSuspended && styles.avatarMuted]}>
             <Text style={styles.avatarText}>
               {nomComplet.charAt(0).toUpperCase()}
             </Text>
           </View>
           <Text style={styles.farmerName}>{nomComplet}</Text>
-          <Text style={styles.farmName}>🏡 {nomFerme}</Text>
+          <Text style={[styles.farmName, isSuspended && styles.textMuted]}>
+            🏡 {nomFerme}
+          </Text>
 
-          {pointDeVente && config && (
-            <View style={[styles.typeBadge, { backgroundColor: config.bg }]}>
-              <Text style={styles.typeBadgeEmoji}>{config.emoji}</Text>
-              <Text style={[styles.typeBadgeText, { color: config.color }]}>
-                {config.label}
+          {isSuspended ? (
+            <View style={styles.pausedBadge}>
+              <Text style={styles.pausedBadgeText}>
+                ⏸️ {t.farmerProfile.unavailableBadge}
               </Text>
             </View>
+          ) : (
+            pointDeVente && config && (
+              <View style={[styles.typeBadge, { backgroundColor: config.bg }]}>
+                <Text style={styles.typeBadgeEmoji}>{config.emoji}</Text>
+                <Text style={[styles.typeBadgeText, { color: config.color }]}>
+                  {config.label}
+                </Text>
+              </View>
+            )
           )}
 
           {(pointDeVente?.adresse || agriculteur.adresse) && (
@@ -167,12 +200,50 @@ export default function FarmerProfileScreen() {
             </Text>
           )}
 
-          {pointDeVente && (
+          {pointDeVente && !isSuspended && (
             <TouchableOpacity
               style={styles.mapBtn}
               onPress={() => router.push(`/(consumer)/map?pointId=${pointDeVente.id}`)}
             >
               <Text style={styles.mapBtnText}>🗺️ {t.farmerProfile.viewOnMap}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Bandeau indisponibilité */}
+        {isSuspended && (
+          <View style={styles.pausedCard}>
+            <Text style={styles.pausedIcon}>🌾</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pausedTitle}>{t.farmerProfile.unavailableTitle}</Text>
+              <Text style={styles.pausedText}>{t.farmerProfile.unavailableMessage}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Contact */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t.farmerProfile.contact}</Text>
+          {isSuspended || !compte?.telephone ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>
+                {isSuspended
+                  ? t.farmerProfile.contactHidden
+                  : t.farmerProfile.noContact}
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.contactCard}
+              onPress={() => Linking.openURL(`tel:${compte.telephone}`)}
+            >
+              <View style={styles.contactIconBox}>
+                <Text style={styles.contactIcon}>📞</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.contactLabel}>{t.farmerProfile.callFarmer}</Text>
+                <Text style={styles.contactValue}>{compte.telephone}</Text>
+              </View>
             </TouchableOpacity>
           )}
         </View>
@@ -232,16 +303,22 @@ export default function FarmerProfileScreen() {
                 <View
                   style={[
                     styles.availBadge,
-                    { backgroundColor: prod.disponible !== false ? "#f0fdf4" : "#fef2f2" },
+                    {
+                      backgroundColor:
+                        !isSuspended && prod.disponible !== false ? "#f0fdf4" : "#fef2f2",
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.availText,
-                      { color: prod.disponible !== false ? "#16a34a" : "#dc2626" },
+                      {
+                        color:
+                          !isSuspended && prod.disponible !== false ? "#16a34a" : "#dc2626",
+                      },
                     ]}
                   >
-                    {prod.disponible !== false
+                    {!isSuspended && prod.disponible !== false
                       ? t.farmerProfile.available
                       : t.farmerProfile.unavailable}
                   </Text>
@@ -251,7 +328,7 @@ export default function FarmerProfileScreen() {
           )}
         </View>
 
-        {/* Annonces récentes */}
+        {/* Annonces et historique */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.farmerProfile.publications}</Text>
           {publications.length === 0 ? (
@@ -259,23 +336,50 @@ export default function FarmerProfileScreen() {
               <Text style={styles.emptyText}>{t.farmerProfile.noPublications}</Text>
             </View>
           ) : (
-            publications.map((pub) => (
-              <View key={pub.id} style={styles.pubCard}>
-                <Text style={styles.pubContent}>{pub.contenu}</Text>
-                <View style={styles.pubInfoRow}>
-                  {pub.produit && (
-                    <View style={styles.pubChip}>
-                      <Text style={styles.pubChipText}>🌿 {pub.produit}</Text>
+            publications.map((pub, index) => {
+              const isPast = pub.statut === "perime";
+              const prev = publications[index - 1];
+              const showDivider = isPast && (!prev || prev.statut !== "perime");
+
+              return (
+                <View key={pub.id}>
+                  {showDivider && (
+                    <View style={styles.divider}>
+                      <View style={styles.dividerLine} />
+                      <Text style={styles.dividerText}>
+                        {t.farmerProfile.pastSection}
+                      </Text>
+                      <View style={styles.dividerLine} />
                     </View>
                   )}
-                  {pub.prix && (
-                    <View style={styles.pubChip}>
-                      <Text style={styles.pubChipText}>💰 {pub.prix.toLocaleString()} Ar</Text>
+
+                  <View style={[styles.pubCard, isPast && styles.pubCardPast]}>
+                    {isPast && (
+                      <Text style={styles.pubPastBadge}>
+                        🗄️ {t.farmerProfile.pastSale}
+                      </Text>
+                    )}
+                    <Text style={[styles.pubContent, isPast && styles.textMuted]}>
+                      {pub.contenu}
+                    </Text>
+                    <View style={styles.pubInfoRow}>
+                      {pub.produit && (
+                        <View style={styles.pubChip}>
+                          <Text style={styles.pubChipText}>🌿 {pub.produit}</Text>
+                        </View>
+                      )}
+                      {pub.prix && (
+                        <View style={styles.pubChip}>
+                          <Text style={styles.pubChipText}>
+                            💰 {pub.prix.toLocaleString()} Ar
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                  )}
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -331,21 +435,32 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 4,
   },
+  identityCardMuted: { backgroundColor: "#fafafa" },
   avatar: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: "#16a34a",
     alignItems: "center", justifyContent: "center",
     marginBottom: 12,
   },
+  avatarMuted: { backgroundColor: "#9ca3af" },
   avatarText: { fontSize: 30, fontWeight: "800", color: "#fff" },
   farmerName: { fontSize: 20, fontWeight: "800", color: "#111827" },
   farmName: { fontSize: 14, color: "#16a34a", marginTop: 4, fontWeight: "600" },
+  textMuted: { color: "#9ca3af" },
   typeBadge: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, marginTop: 12,
   },
   typeBadgeEmoji: { fontSize: 14 },
   typeBadgeText: { fontSize: 12, fontWeight: "700" },
+  pausedBadge: {
+    backgroundColor: "#f3f4f6",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginTop: 12,
+  },
+  pausedBadgeText: { fontSize: 12, fontWeight: "700", color: "#6b7280" },
   address: { fontSize: 13, color: "#6b7280", marginTop: 12 },
   mapBtn: {
     marginTop: 16,
@@ -357,8 +472,46 @@ const styles = StyleSheet.create({
     borderColor: "#bbf7d0",
   },
   mapBtnText: { fontSize: 13, color: "#16a34a", fontWeight: "600" },
+
+  // Bandeau indisponibilité
+  pausedCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  pausedIcon: { fontSize: 22 },
+  pausedTitle: { fontSize: 14, fontWeight: "700", color: "#92400e" },
+  pausedText: { fontSize: 13, color: "#b45309", marginTop: 3, lineHeight: 19 },
+
   section: { marginBottom: 22 },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111827", marginBottom: 12 },
+
+  // Contact
+  contactCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  contactIconBox: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: "#f0fdf4",
+    alignItems: "center", justifyContent: "center",
+  },
+  contactIcon: { fontSize: 20 },
+  contactLabel: { fontSize: 12, color: "#6b7280" },
+  contactValue: { fontSize: 15, fontWeight: "700", color: "#16a34a", marginTop: 2 },
+
   aboutCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -385,7 +538,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#f3f4f6",
   },
-  emptyText: { fontSize: 13, color: "#9ca3af" },
+  emptyText: { fontSize: 13, color: "#9ca3af", textAlign: "center", lineHeight: 19 },
   productCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -411,6 +564,18 @@ const styles = StyleSheet.create({
   productPrice: { fontSize: 13, color: "#16a34a", fontWeight: "700", marginTop: 4 },
   availBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   availText: { fontSize: 11, fontWeight: "600" },
+
+  // Séparateur historique
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#e5e7eb" },
+  dividerText: { fontSize: 12, fontWeight: "600", color: "#9ca3af" },
+
   pubCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -419,6 +584,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#f3f4f6",
   },
+  pubCardPast: { backgroundColor: "#f9fafb", borderColor: "#e5e7eb" },
+  pubPastBadge: { fontSize: 11, fontWeight: "700", color: "#6b7280", marginBottom: 6 },
   pubContent: { fontSize: 14, color: "#374151", lineHeight: 20 },
   pubInfoRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   pubChip: {
