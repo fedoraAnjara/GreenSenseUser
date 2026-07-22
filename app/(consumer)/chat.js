@@ -100,7 +100,12 @@ export default function ChatScreen() {
               const data = d.data();
               return [
                 { role: "user", content: data.userMessage, exchangeId: d.id },
-                { role: "assistant", content: data.assistantMessage, exchangeId: d.id },
+                {
+                  role: "assistant",
+                  content: data.assistantMessage,
+                  exchangeId: d.id,
+                  linkedFarmers: data.linkedFarmers || [],
+                },
               ];
             });
 
@@ -174,6 +179,7 @@ export default function ChatScreen() {
           }
 
           return {
+            agriculteurId: point.agriculteurId || null,
             nom: point.nom,
             agriculteurNom: point.agriculteurNom,
             adresse: point.adresse,
@@ -227,7 +233,8 @@ CE QUE TU FAIS :
 CE QUE TU NE FAIS JAMAIS :
 - Tu ne donnes jamais l'impression de réciter un manuel
 - Tu ne remplaces pas un médecin : si quelque chose touche à la santé sérieuse, tu le rappelles gentiment et tu suggères de consulter
-- Tu ne juges jamais, tu encourages toujours`;
+- Tu ne juges jamais, tu encourages toujours
+- Tu n'inventes JAMAIS de numéro de téléphone, d'adresse ou de coordonnées`;
 
     if (healthProfile) {
       prompt += `\n\nCE QUE TU SAIS SUR TON AMI (utilise-le naturellement, sans le réciter comme une fiche) :
@@ -249,10 +256,34 @@ Garde ça en tête dans tes conseils, mais parle-en avec tact, comme un ami atte
           : "distance inconnue";
         prompt += `\n- ${p.nom} (${p.agriculteurNom || "producteur local"}), à ${dist}, propose : ${p.produits.join(", ")}`;
       });
-      prompt += `\n\nQuand tu recommandes un aliment qui convient à son profil santé ET qu'un de ces producteurs le propose, mentionne-le naturellement. Mais ne recommande QUE ce qui est bon pour sa santé. Reste naturel, ne récite pas la liste.`;
+      prompt += `\n\nQuand tu recommandes un aliment qui convient à son profil santé ET qu'un de ces producteurs le propose, mentionne-le naturellement en citant son nom EXACT tel qu'il apparaît ci-dessus. Mais ne recommande QUE ce qui est bon pour sa santé. Reste naturel, ne récite pas la liste.
+
+SI ON TE DEMANDE LE CONTACT OU LES COORDONNÉES D'UN PRODUCTEUR :
+- N'invente jamais de numéro ni d'adresse
+- Cite le nom exact du producteur et indique simplement que sa fiche complète, avec ses coordonnées et son catalogue, s'ouvre juste en dessous de ton message
+- Reste bref et chaleureux, une ou deux phrases suffisent`;
     }
 
     return prompt;
+  };
+
+  // Repère les producteurs cités dans une réponse, pour proposer un lien vers leur fiche
+  const detectMentionedFarmers = (text) => {
+    if (!text) return [];
+    const lower = text.toLowerCase();
+    const found = [];
+    nearbyProducers.forEach((p) => {
+      if (!p.agriculteurId) return;
+      const names = [p.agriculteurNom, p.nom].filter(Boolean);
+      const mentioned = names.some((n) => lower.includes(n.toLowerCase()));
+      if (mentioned && !found.some((f) => f.agriculteurId === p.agriculteurId)) {
+        found.push({
+          agriculteurId: p.agriculteurId,
+          label: p.agriculteurNom || p.nom,
+        });
+      }
+    });
+    return found;
   };
 
   const handleSend = async (messageText = null) => {
@@ -271,10 +302,14 @@ Garde ça en tête dans tes conseils, mais parle-en avec tact, comme un ami atte
         buildSystemPrompt()
       );
 
+      // Producteurs cités dans la réponse
+      const linkedFarmers = detectMentionedFarmers(responseText);
+
       // Sauvegarder dans Firestore et récupérer l'ID
       const docRef = await addDoc(collection(db, "users", user.uid, "conversations"), {
         userMessage: textToSend,
         assistantMessage: responseText,
+        linkedFarmers,
         sentAt: serverTimestamp(),
       });
 
@@ -282,7 +317,12 @@ Garde ça en tête dans tes conseils, mais parle-en avec tact, comme un ami atte
       const finalMessages = [
         ...messages,
         { role: "user", content: textToSend, exchangeId: docRef.id },
-        { role: "assistant", content: responseText, exchangeId: docRef.id },
+        {
+          role: "assistant",
+          content: responseText,
+          exchangeId: docRef.id,
+          linkedFarmers,
+        },
       ];
       setMessages(finalMessages);
 
@@ -506,22 +546,50 @@ Garde ça en tête dans tes conseils, mais parle-en avec tact, comme un ami atte
                     <Text style={styles.botAvatarText}>🌿</Text>
                   </View>
                 )}
-                <View
-                  style={[
-                    styles.bubble,
-                    msg.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
-                    isSelected && styles.bubbleSelected,
-                  ]}
-                >
-                  <Text
+
+                <View style={styles.bubbleWrap}>
+                  <View
                     style={[
-                      styles.bubbleText,
-                      msg.role === "user" ? styles.bubbleTextUser : styles.bubbleTextAssistant,
+                      styles.bubble,
+                      msg.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
+                      isSelected && styles.bubbleSelected,
                     ]}
                   >
-                    {msg.content}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.bubbleText,
+                        msg.role === "user" ? styles.bubbleTextUser : styles.bubbleTextAssistant,
+                      ]}
+                    >
+                      {msg.content}
+                    </Text>
+                  </View>
+
+                  {/* Fiches des producteurs cités */}
+                  {msg.role === "assistant" &&
+                    msg.linkedFarmers?.length > 0 &&
+                    !selectionMode && (
+                      <View style={styles.farmerLinks}>
+                        {msg.linkedFarmers.map((f) => (
+                          <TouchableOpacity
+                            key={f.agriculteurId}
+                            style={styles.farmerLinkBtn}
+                            onPress={() =>
+                              router.push(`/(consumer)/agriculteur/${f.agriculteurId}`)
+                            }
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.farmerLinkIcon}>👤</Text>
+                            <Text style={styles.farmerLinkText} numberOfLines={1}>
+                              {f.label}
+                            </Text>
+                            <Text style={styles.farmerLinkArrow}>›</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
                 </View>
+
                 {selectionMode && msg.exchangeId && msg.role === "user" && (
                   <View style={[styles.checkCircle, isSelected && styles.checkCircleActive]}>
                     {isSelected && <Text style={styles.checkMark}>✓</Text>}
@@ -632,7 +700,8 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
   botAvatarText: { fontSize: 16 },
-  bubble: { maxWidth: "76%", borderRadius: 18, paddingVertical: 11, paddingHorizontal: 14 },
+  bubbleWrap: { maxWidth: "76%" },
+  bubble: { borderRadius: 18, paddingVertical: 11, paddingHorizontal: 14 },
   bubbleUser: { backgroundColor: "#16a34a", borderBottomRightRadius: 5 },
   bubbleAssistant: {
     backgroundColor: "#fff", borderBottomLeftRadius: 5, borderWidth: 1, borderColor: "#f3f4f6",
@@ -642,6 +711,24 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 14, lineHeight: 21 },
   bubbleTextUser: { color: "#fff" },
   bubbleTextAssistant: { color: "#1f2937" },
+
+  // Liens vers les fiches producteurs
+  farmerLinks: { marginTop: 8, gap: 6 },
+  farmerLinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  farmerLinkIcon: { fontSize: 14 },
+  farmerLinkText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#15803d" },
+  farmerLinkArrow: { fontSize: 18, color: "#16a34a", lineHeight: 20 },
+
   typingBubble: { flexDirection: "row", alignItems: "center", gap: 8 },
   typingText: { fontSize: 13, color: "#6b7280" },
   checkCircle: {
