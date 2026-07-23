@@ -11,16 +11,22 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#f0fdf4",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
-    },
+"android": {
+  "adaptiveIcon": {
+    "backgroundColor": "#f0fdf4",
+    "foregroundImage": "./assets/images/android-icon-foreground.png",
+    "backgroundImage": "./assets/images/android-icon-background.png",
+    "monochromeImage": "./assets/images/android-icon-monochrome.png"
+  },
+  "edgeToEdgeEnabled": true,
+  "predictiveBackGestureEnabled": false,
+  "package": "com.dodola.greensensemobile",
+  "config": {
+    "googleMaps": {
+      "apiKey": "AIzaSyAOMAwN-CL0kl68bKwMmiQ6BTyYpjLCaII"
+    }
+  }
+},
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
@@ -43,6 +49,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e0b8bfc2-5a7f-4a18-a2c3-73af9ceb3710"
+      }
+    },
+    "owner": "dodola"
   }
 }

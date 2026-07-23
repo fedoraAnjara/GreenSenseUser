@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../src/lib/firebase";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLanguage } from "../../src/context/LanguageContext";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { getOrGenerateMenu, getCurrentDay } from "../../src/lib/menuService";
 import * as Location from "expo-location";
 import { Image } from "react-native";
@@ -122,32 +122,37 @@ export default function HomeScreen() {
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-    fetchPointsProches();
-  };
-
-useEffect(() => {
-  fetchData();
-  fetchPointsProches();
-
-  const fetchAvatar = async () => {
+  // Récupération de l'avatar (extraite pour être rejouable)
+  const fetchAvatar = useCallback(async () => {
     if (!user) return;
-
     try {
       const userSnap = await getDoc(doc(db, "users", user.uid));
-
       if (userSnap.exists()) {
         setAvatar(userSnap.data().photoBase64 || null);
       }
     } catch (error) {
       console.error("Erreur avatar :", error);
     }
+  }, [user]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+    fetchPointsProches();
+    fetchAvatar();
   };
 
-  fetchAvatar();
-}, [user]);
+  useEffect(() => {
+    fetchData();
+    fetchPointsProches();
+  }, [user]);
+
+  // Recharge l'avatar à chaque retour sur l'écran
+  useFocusEffect(
+    useCallback(() => {
+      fetchAvatar();
+    }, [fetchAvatar])
+  );
 
   if (loading) {
     return (
@@ -262,24 +267,24 @@ useEffect(() => {
             style={styles.avatarBtn}
             onPress={() => router.push("/(consumer)/profile")}
           >
-{avatar ? (
-  <Image
-    source={{ uri: `data:image/jpeg;base64,${avatar}` }}
-    style={styles.avatarImage}
-  />
-) : (
-  <View style={styles.avatar}>
-    <Text style={styles.avatarText}>
-      {(
-        userData?.nom?.split(" ")[1] ||
-        userData?.nom?.split(" ")[0] ||
-        "U"
-      )
-        .charAt(0)
-        .toUpperCase()}
-    </Text>
-  </View>
-)}
+            {avatar ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${avatar}` }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {(
+                    userData?.nom?.split(" ")[1] ||
+                    userData?.nom?.split(" ")[0] ||
+                    "U"
+                  )
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -643,10 +648,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   avatarImage: {
-  width: 42,
-  height: 42,
-  borderRadius: 21,
-},
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
   actionEmoji: {
     fontSize: 24,
   },

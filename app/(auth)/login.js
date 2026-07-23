@@ -10,8 +10,9 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../src/lib/firebase";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../../src/lib/firebase";
 import { useRouter } from "expo-router";
 import { useLanguage } from "../../src/context/LanguageContext";
 import Logo from "../../components/Logo";
@@ -46,7 +47,21 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+
+      // Vérification du rôle : les comptes admin sont réservés au dashboard web
+      const userSnap = await getDoc(doc(db, "users", cred.user.uid));
+      const role = userSnap.exists() ? userSnap.data().role : null;
+
+      if (role === "admin") {
+        await signOut(auth);
+        setError(
+          t.auth.errors.adminNotAllowed ||
+            "Ce compte administrateur n'a pas accès à l'application mobile."
+        );
+        return;
+      }
+
       router.replace("/(consumer)");
     } catch (e) {
       setError(getErrorMessage(e.code));
